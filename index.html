@@ -1,0 +1,1898 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#9fd4f2">
+<title>涂鸦过山车 · 一笔画轨道 + 电磁弹射</title>
+<meta name="description" content="随手画一条线，它就会变成一座过山车 —— 然后第一人称坐上去。支持 100–10000 km/h 电磁弹射、实时速度与 G 值仪表、自制轨道。">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://big67-123.github.io/doodle-coaster-cn/">
+<meta property="og:site_name" content="涂鸦过山车">
+<meta property="og:title" content="涂鸦过山车 · Doodle Coaster CN">
+<meta property="og:description" content="随手画一条线，它就会变成一座过山车 —— 然后第一人称坐上去。支持 100–10000 km/h 电磁弹射、实时速度与 G 值仪表、自制轨道。">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="涂鸦过山车 · Doodle Coaster CN">
+<meta name="twitter:description" content="随手画一条线，它就会变成一座过山车 —— 然后第一人称坐上去。支持 100–10000 km/h 电磁弹射、实时速度与 G 值仪表、自制轨道。">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M2 26 C8 26 9 6 16 6 C22 6 21 18 16 18 C11 18 12 10 18 10 C24 10 26 26 30 26' fill='none' stroke='%23d6342c' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
+<style>
+*,*::before,*::after{box-sizing:border-box}
+:root{--ink:#14202b;--red:#d6342c;--gold:#ffc53d;--sans:system-ui,-apple-system,"Segoe UI",Roboto,"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Noto Sans SC","Source Han Sans SC",sans-serif}
+html,body{margin:0;height:100%;overflow:hidden;background:#9fd4f2;touch-action:none;overscroll-behavior:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent;font-family:var(--sans);color:var(--ink)}
+canvas{position:fixed;inset:0;width:100%;height:100%;touch-action:none;display:block}
+button{font-family:inherit}
+
+/* top bar */
+#hud{position:fixed;left:0;right:0;top:0;z-index:8;display:flex;align-items:center;gap:8px;padding:calc(env(safe-area-inset-top) + 10px) 14px 8px;pointer-events:none}
+.brand{font:900 17px/1 var(--sans);letter-spacing:-.01em;display:flex;align-items:center;gap:7px;white-space:nowrap;margin-right:auto}
+.brand i{display:inline-block;width:22px;height:14px;border-radius:7px;border:3px solid var(--red);border-bottom-color:transparent;transform:rotate(-12deg)}
+.hb{pointer-events:auto;appearance:none;border:0;height:40px;min-width:40px;padding:0 13px;border-radius:20px;background:rgba(20,32,43,.82);color:#fff;font:800 14px/1 var(--sans);cursor:pointer;display:none}
+#redraw{font-size:19px;padding:0}
+body.hasTrack #redraw{display:block}
+/* mini map button: only while riding in 3D */
+/* view toggles (track, pillars, mini map): only while riding in 3D */
+.tog{position:relative;padding:0;display:none !important;align-items:center;justify-content:center}
+.tog svg{width:22px;height:22px;display:block}
+body.pov3d .tog{display:flex !important}
+.tog::after{content:'';position:absolute;left:9px;right:9px;top:50%;height:2.5px;margin-top:-1px;border-radius:2px;background:#ff7a6e;transform:rotate(-45deg);display:none}
+body.mapOff #mapBtn,body.railsOff #railBtn,body.postsOff #postBtn{background:rgba(20,32,43,.45);color:rgba(255,255,255,.75)}
+body.mapOff #mapBtn::after,body.railsOff #railBtn::after,body.postsOff #postBtn::after{display:block}
+body.pov3d .brand{visibility:hidden}
+/* mini map (the course from the side, with where you are now) */
+#mini{position:fixed;inset:auto;left:12px;top:calc(env(safe-area-inset-top) + 10px);z-index:8;display:none;width:auto;height:auto;border-radius:14px;background:rgba(255,255,255,.72);box-shadow:0 6px 20px rgba(0,30,60,.25);pointer-events:none;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+body.pov3d:not(.mapOff) #mini{display:block}
+@media (max-width:440px){body.hasTrack .brand span{display:none}}
+#gl{z-index:1;pointer-events:none;opacity:0;visibility:hidden;transition:opacity .7s ease,visibility 0s linear .7s}
+body.pov3d #gl{opacity:1;visibility:visible;transition:opacity .7s ease}
+
+/* start bar (after drawing) */
+#startBar{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom) + 16px);transform:translateX(-50%);z-index:8;display:none;flex-direction:column;align-items:center;gap:10px;width:min(420px,calc(100vw - 24px))}
+body.ready #startBar{display:flex}
+#readyMsg{font:800 14px/1.3 var(--sans);background:rgba(255,255,255,.88);padding:8px 14px;border-radius:999px;box-shadow:0 4px 14px rgba(0,40,80,.12);text-align:center}
+#startBar .row2{display:flex;gap:10px;width:100%}
+#startBar .btn{flex:1;padding:17px 10px;font-size:16px;box-shadow:0 6px 16px rgba(0,30,60,.15)}
+#bGo{flex:1.7 !important;font-size:20px !important;letter-spacing:.04em;animation:pulse 1.3s ease-in-out infinite}
+@keyframes pulse{50%{transform:scale(1.045);box-shadow:0 10px 26px rgba(214,52,44,.45)}}
+
+/* start screen */
+#hint{position:fixed;left:50%;top:44%;transform:translate(-50%,-50%);z-index:4;text-align:center;pointer-events:none;width:min(94vw,520px);transition:opacity .3s}
+#hint.off{opacity:0}
+#hint .h1{font:900 clamp(24px,6.6vw,40px)/1.15 var(--sans);letter-spacing:-.02em;text-shadow:0 2px 0 rgba(255,255,255,.6)}
+#hint .sub{margin:12px 0 0;font:700 15px/1.5 var(--sans);opacity:.7}
+#hint .pen{display:block;margin:14px auto 0;width:150px;height:56px}
+#hint .pen path{stroke-dasharray:420;stroke-dashoffset:420;animation:draw 2.4s ease-in-out infinite}
+@keyframes draw{60%,100%{stroke-dashoffset:0}}
+
+#toast{position:fixed;left:50%;top:calc(env(safe-area-inset-top) + 64px);transform:translate(-50%,-8px);z-index:10;background:var(--ink);color:#fff;font:700 14px/1.4 var(--sans);padding:10px 16px;border-radius:12px;opacity:0;transition:.25s;pointer-events:none;width:max-content;max-width:calc(100vw - 32px);text-align:center}
+#toast.in{opacity:1;transform:translate(-50%,0)}
+
+/* cards */
+.ov{position:fixed;inset:0;z-index:20;display:flex;align-items:flex-end;justify-content:center;padding:16px 12px calc(env(safe-area-inset-bottom) + 14px);background:linear-gradient(rgba(20,32,43,0) 40%,rgba(20,32,43,.35));overflow:auto;touch-action:pan-y}
+.ov[hidden]{display:none}
+.card{width:min(440px,100%);background:#fff;border-radius:22px;padding:18px 18px 14px;box-shadow:0 20px 60px rgba(0,30,60,.35);animation:up .45s cubic-bezier(.2,.9,.25,1.1)}
+@keyframes up{from{transform:translateY(40px);opacity:0}}
+.kick{font:800 11.5px/1 var(--sans);letter-spacing:.14em;text-transform:uppercase;color:var(--red);margin:4px 0 7px}
+.name{font:900 25px/1.2 var(--sans);letter-spacing:-.02em;margin:0 0 16px}
+.btns{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.btn{appearance:none;border:0;border-radius:14px;padding:15px 10px;font:800 15px/1 var(--sans);cursor:pointer;background:#eef3f7;color:var(--ink);text-align:center;text-decoration:none;display:block}
+.btn.pri{background:var(--ink);color:#fff}
+.btn.red{background:var(--red);color:#fff}
+.btn.wide{grid-column:1/3}
+.small{margin:12px 0 0;text-align:center;font-size:12px;opacity:.5;line-height:1.7}
+.small a{color:inherit}
+.ad-slot{margin-top:14px;display:flex;justify-content:center}
+.ad-slot:empty{display:none}
+@media (max-height:700px){.card{padding:14px 14px 12px}.name{font-size:22px;margin-bottom:12px}.btn{padding:13px 10px}.small{margin-top:8px}}
+
+/* ---------- 仪表：速度 / G 值 ---------- */
+#gauge{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom) + 12px);transform:translateX(-50%) translateY(14px);z-index:9;display:none;gap:9px;align-items:stretch;width:min(560px,calc(100vw - 20px));pointer-events:none;opacity:0;transition:opacity .35s ease,transform .35s ease}
+body.riding #gauge{display:flex;opacity:1;transform:translateX(-50%) translateY(0)}
+.gbox{flex:1 1 0;min-width:0;background:rgba(20,32,43,.82);border-radius:15px;padding:9px 12px 10px;color:#fff;-webkit-backdrop-filter:blur(7px);backdrop-filter:blur(7px)}
+.glab{font:800 10px/1 var(--sans);letter-spacing:.15em;color:rgba(255,255,255,.6);text-transform:uppercase;white-space:nowrap}
+.gval{display:flex;align-items:baseline;gap:4px;margin-top:4px}
+.gnum{font:900 clamp(21px,6.6vw,32px)/1 var(--sans);letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.gunit{font:800 11.5px/1 var(--sans);opacity:.7;white-space:nowrap}
+.gbar{position:relative;height:5px;border-radius:3px;background:rgba(255,255,255,.15);margin-top:7px;overflow:hidden}
+.gbar>i{position:absolute;left:0;top:0;bottom:0;width:0;border-radius:3px;background:linear-gradient(90deg,#4cd07d,#ffc93c 52%,#ff5b4d)}
+.gbar>u{position:absolute;top:-1px;bottom:-1px;left:0;width:2px;background:#fff;opacity:.9;border-radius:1px}
+.gticks{display:flex;justify-content:space-between;margin-top:3px;font:700 8px/1 var(--sans);opacity:.42}
+#gSlow{flex:0 0 auto;appearance:none;border:0;border-radius:15px;background:rgba(20,32,43,.82);color:#fff;font:800 10.5px/1 var(--sans);padding:0 11px;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;letter-spacing:.06em;pointer-events:auto;-webkit-backdrop-filter:blur(7px);backdrop-filter:blur(7px)}
+#gSlow b{font-size:15px;letter-spacing:0}
+body.slowmo #gSlow{background:rgba(214,52,44,.92)}
+
+/* ---------- 电磁弹射 ---------- */
+#launchRow{width:100%;background:rgba(255,255,255,.9);border-radius:17px;padding:10px 13px 11px;box-shadow:0 4px 16px rgba(0,40,80,.13);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+#launchRow .lhead{display:flex;align-items:baseline;gap:8px;font:800 12px/1 var(--sans);letter-spacing:.04em}
+#launchRow .lhead span{font-weight:800;letter-spacing:.14em;opacity:.5;text-transform:uppercase;font-size:10px}
+#launchRow .lhead b{margin-left:auto;font:900 17px/1 var(--sans);color:var(--red);font-variant-numeric:tabular-nums}
+#launchRange{width:100%;margin:8px 0 0;height:24px;accent-color:var(--red);background:transparent}
+#launchRow.off #launchRange,#launchRow.off .lpresets{opacity:.35;pointer-events:none}
+.lpresets{display:flex;gap:6px;margin-top:3px}
+.lpresets button{flex:1;appearance:none;border:0;border-radius:9px;background:#eef3f7;color:var(--ink);font:800 11px/1 var(--sans);padding:7px 0;cursor:pointer}
+.lpresets button.on{background:var(--ink);color:#fff}
+.ltoggle{display:flex;align-items:center;gap:7px;margin-top:9px;font:800 12px/1 var(--sans);opacity:.78}
+.ltoggle input{width:17px;height:17px;accent-color:var(--red)}
+
+/* ---------- 弹射闪光 / 高速速度线 ---------- */
+#flash{position:fixed;inset:0;z-index:6;pointer-events:none;opacity:0;background:radial-gradient(circle at 50% 62%,rgba(255,255,255,.98),rgba(150,215,255,.4) 46%,transparent 74%)}
+#flash.go{animation:flashout .6s ease-out}
+@keyframes flashout{0%{opacity:.95}100%{opacity:0}}
+#lines{position:fixed;inset:0;z-index:5;pointer-events:none;opacity:0;transition:opacity .35s;background:repeating-linear-gradient(96deg,transparent 0 7px,rgba(255,255,255,.62) 7px 8px);-webkit-mask-image:radial-gradient(circle at 50% 50%,transparent 24%,#000 76%);mask-image:radial-gradient(circle at 50% 50%,transparent 24%,#000 76%)}
+body.hyperspeed #lines{opacity:.5;animation:zoomlines .45s linear infinite}
+@keyframes zoomlines{from{background-position:0 0}to{background-position:30px 0}}
+
+/* ---------- 成绩卡 ---------- */
+.stats{display:grid;grid-template-columns:repeat(2,1fr);gap:7px;margin:0 0 12px}
+.stat{background:#f2f6f9;border-radius:12px;padding:9px 11px;min-width:0}
+.sk{font:800 10px/1 var(--sans);letter-spacing:.11em;color:rgba(20,32,43,.48);text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sv{font:900 18.5px/1.2 var(--sans);letter-spacing:-.01em;font-variant-numeric:tabular-nums;white-space:nowrap}
+.sv small{font-size:10.5px;font-weight:800;opacity:.55;margin-left:2px}
+
+/* ---------- 轨道工坊 ---------- */
+#workshop .card{max-height:min(88vh,780px);display:flex;flex-direction:column}
+.tabs{display:flex;gap:6px;margin-bottom:12px;flex:0 0 auto}
+.tabs button{flex:1;appearance:none;border:0;border-radius:11px;padding:10px 5px;font:800 12.5px/1 var(--sans);background:#eef3f7;color:var(--ink);cursor:pointer}
+.tabs button.on{background:var(--ink);color:#fff}
+.pane{display:none;min-height:0;overflow:auto;-webkit-overflow-scrolling:touch}
+.pane.on{display:block}
+.tlist{display:flex;flex-direction:column;gap:8px}
+.titem{display:flex;align-items:center;gap:9px;background:#f2f6f9;border-radius:13px;padding:10px 11px}
+.titem .tt{flex:1;min-width:0}
+.titem .tn{font:900 15px/1.25 var(--sans);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.titem .tm{font:700 11px/1.45 var(--sans);opacity:.55;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.titem button{flex:0 0 auto;appearance:none;border:0;border-radius:9px;padding:9px 11px;font:800 12px/1 var(--sans);background:var(--ink);color:#fff;cursor:pointer}
+.titem button.ghost{background:#dfe7ee;color:var(--ink)}
+#jsonBox{width:100%;height:180px;font:600 11.5px/1.55 ui-monospace,Consolas,"Courier New",monospace;border:1.5px solid #dbe4ec;border-radius:12px;padding:10px;resize:vertical;color:var(--ink);background:#fbfdff;box-sizing:border-box}
+.vmsg{margin-top:9px;font:700 12px/1.6 var(--sans);border-radius:11px;padding:9px 11px;white-space:pre-wrap;display:none;word-break:break-word}
+.vmsg.on{display:block}
+.vmsg.ok{background:#e7f7ee;color:#186c43}
+.vmsg.err{background:#fdeceb;color:#a9271f}
+.vmsg.warn{background:#fff6e0;color:#8a5a00}
+.rowbtn{display:flex;gap:7px;margin-top:9px;flex-wrap:wrap}
+.rowbtn button{flex:1 1 auto;appearance:none;border:0;border-radius:11px;padding:11px 12px;font:800 12.5px/1 var(--sans);background:#eef3f7;color:var(--ink);cursor:pointer;white-space:nowrap}
+.rowbtn button.pri{background:var(--red);color:#fff}
+.rowbtn button.dark{background:var(--ink);color:#fff}
+.hintline{font:700 11.5px/1.7 var(--sans);opacity:.55;margin:10px 0 0}
+
+/* ---------- 编辑器 ---------- */
+#editBar{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom) + 12px);transform:translateX(-50%);z-index:12;display:none;gap:7px;background:rgba(20,32,43,.9);padding:9px;border-radius:17px;width:min(560px,calc(100vw - 20px));-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
+body.editing #editBar{display:flex}
+#editBar button{flex:1;appearance:none;border:0;border-radius:11px;padding:12px 4px;font:800 12.5px/1 var(--sans);background:rgba(255,255,255,.15);color:#fff;cursor:pointer;white-space:nowrap}
+#editBar button.pri{background:var(--red)}
+#editBar button.dark{background:#eef3f7;color:var(--ink)}
+#editInfo{position:fixed;left:50%;top:calc(env(safe-area-inset-top) + 58px);transform:translateX(-50%);z-index:12;display:none;background:rgba(20,32,43,.84);color:#fff;font:800 11.5px/1.6 var(--sans);padding:8px 13px;border-radius:11px;text-align:center;white-space:nowrap;max-width:calc(100vw - 24px);overflow:hidden;text-overflow:ellipsis}
+body.editing #editInfo{display:block}
+#shopBtn{display:block !important}
+body.pov3d #shopBtn,body.editing #shopBtn{display:none !important}
+body.editing #hud{display:none}
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+<canvas id="gl"></canvas>
+<canvas id="mini"></canvas>
+
+<div id="hud">
+  <div class="brand"><i></i><span id="brandT">Doodle Coaster</span></div>
+  <button class="hb tog" id="railBtn" type="button" aria-label="Track"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 3v18M16 3v18M8 7.5h8M8 12h8M8 16.5h8"/></svg></button>
+  <button class="hb tog" id="postBtn" type="button" aria-label="Pillars"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7c5-4 13-4 18 0M7.5 5.2V20M16.5 5.2V20M4 20.5h16"/></svg></button>
+  <button class="hb tog" id="mapBtn" type="button" aria-label="Mini map"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><path d="M3 6.5l5.5-2.5 7 2.5L21 4v13.5L15.5 20l-7-2.5L3 20z"/><path d="M8.5 4v13.5M15.5 6.5V20"/></svg></button>
+  <button class="hb" id="redraw" type="button" aria-label="Redraw">↺</button>
+  <button class="hb" id="shopBtn" type="button" aria-label="Track workshop">🛠</button>
+</div>
+
+<div id="startBar">
+  <div id="readyMsg"></div>
+  <div id="launchRow">
+    <div class="lhead"><span id="lLab"></span><b id="lVal">—</b></div>
+    <input id="launchRange" type="range" min="0" max="1000" value="612" step="1">
+    <div class="lpresets" id="lPresets"></div>
+    <label class="ltoggle"><input id="noLaunch" type="checkbox"><span id="nlLab"></span></label>
+  </div>
+  <div class="row2"><button class="btn" id="bRedo" type="button"></button><button class="btn red" id="bGo" type="button"></button></div>
+</div>
+
+<div id="hint">
+  <div class="h1" id="h1"></div>
+  <p class="sub" id="sub"></p>
+  <svg class="pen" viewBox="0 0 150 60"><path d="M5 50 C25 50 30 8 52 8 C72 8 66 38 54 38 C40 38 46 16 66 16 C86 16 92 50 108 50 C122 50 128 28 145 28" fill="none" stroke="#d6342c" stroke-width="4" stroke-linecap="round"/></svg>
+</div>
+<div id="toast"></div>
+
+<div id="gauge">
+  <div class="gbox">
+    <div class="glab" id="gSpeedLab"></div>
+    <div class="gval"><span class="gnum" id="gSpeed">0</span><span class="gunit">km/h</span></div>
+  </div>
+  <div class="gbox">
+    <div class="glab" id="gGLab"></div>
+    <div class="gval"><span class="gnum" id="gG">1.0</span><span class="gunit">G</span></div>
+    <div class="gbar"><i id="gFill"></i><u id="gPeak"></u></div>
+    <div class="gticks"><span>1</span><span>10</span><span>100</span><span>1k</span><span>10k</span></div>
+  </div>
+  <button id="gSlow" type="button"><b id="gSlowIcon">▶</b><span id="gSlowLab"></span></button>
+</div>
+
+<div id="flash"></div>
+<div id="lines"></div>
+
+<div id="editInfo"></div>
+<div id="editBar">
+  <button id="eUndo" type="button"></button>
+  <button id="eClear" type="button"></button>
+  <button id="eDone" class="pri" type="button"></button>
+  <button id="eCancel" class="dark" type="button"></button>
+</div>
+
+<div class="ov" id="sharedOv" hidden>
+  <div class="card">
+    <p class="kick" id="sKick"></p><h2 class="name" id="sName"></h2>
+    <div class="btns"><button class="btn red wide" id="sPov" type="button"></button><button class="btn wide" id="sDraw" type="button"></button></div>
+  </div>
+</div>
+
+<div class="ov" id="result" hidden>
+  <div class="card" id="rCard">
+    <p class="kick" id="rKick"></p><h2 class="name" id="rName"></h2>
+    <div class="stats" id="rStats"></div>
+    <div class="btns">
+      <a class="btn red wide" id="rShare" target="_blank" rel="noopener"></a>
+      <button class="btn pri" id="rAgain" type="button"></button>
+      <button class="btn" id="rNew" type="button"></button>
+      <button class="btn" id="rShop" type="button"></button>
+      <button class="btn" id="rSave" type="button"></button>
+    </div>
+    <div class="ad-slot" id="ad-slot"></div>
+    <p class="small" id="credit"></p>
+  </div>
+</div>
+
+<div class="ov" id="workshop" hidden>
+  <div class="card">
+    <p class="kick" id="wKick"></p><h2 class="name" id="wName"></h2>
+    <div class="tabs" id="wTabs">
+      <button type="button" data-pane="list"></button>
+      <button type="button" data-pane="json"></button>
+      <button type="button" data-pane="edit"></button>
+    </div>
+    <div class="pane on" data-pane="list">
+      <div class="tlist" id="trackList"></div>
+      <label class="ltoggle" style="margin-top:14px"><input id="realDrag" type="checkbox"><span id="rdLab"></span></label>
+      <p class="hintline" id="listHint"></p>
+      <p class="hintline" id="rdHint"></p>
+    </div>
+    <div class="pane" data-pane="json">
+      <textarea id="jsonBox" spellcheck="false"></textarea>
+      <div class="vmsg" id="vMsg"></div>
+      <div class="rowbtn">
+        <button id="wCheck" type="button"></button>
+        <button id="wRide" class="pri" type="button"></button>
+        <button id="wImport" type="button"></button>
+      </div>
+      <div class="rowbtn">
+        <button id="wExport" type="button"></button>
+        <button id="wCopy" type="button"></button>
+      </div>
+      <input id="wFile" type="file" accept=".json,application/json" hidden>
+      <p class="hintline" id="jsonHint"></p>
+    </div>
+    <div class="pane" data-pane="edit">
+      <p class="hintline" id="editHint"></p>
+      <div class="rowbtn">
+        <button id="wEdit" class="dark" type="button"></button>
+        <button id="wSnippet" type="button"></button>
+      </div>
+      <p class="hintline" id="wStats"></p>
+    </div>
+    <div class="rowbtn"><button id="wClose" class="dark" type="button"></button></div>
+  </div>
+</div>
+<script src="tracks.js"></script>
+<script src="physics.js"></script>
+<script>
+
+(() => {
+'use strict';
+const P = window.OLC_PHYS;
+const { G, VMIN, V0, DRAG, ROLL, DS, SUB, SMOOTH_TURN, SMOOTH_PULL,
+        resample, blur, buildControl, buildTrack, sample, zAt, newRide, stepRide,
+        applyLaunch, setArcade, setTuning, simulate, onRelease,
+        DRAG_CAP_ARCADE, BRAKE_A_ARCADE } = P;
+const $ = s => document.querySelector(s);
+
+/* ---------- language ---------- */
+const QP = new URLSearchParams(location.search);
+// 默认简体中文：?lang= 优先，其次看浏览器语言，其余一律中文。
+// 原作的 ja 文案已按需求移除（日文仍是母版，署名与链接保留在成绩卡里）。
+const LANGS = ['zh', 'en'];
+const LANG = (() => {
+  const p = (QP.get('lang') || '').toLowerCase();
+  if (LANGS.indexOf(p) >= 0) return p;
+  return /^en\b/i.test(navigator.language || '') ? 'en' : 'zh';
+})();
+document.documentElement.lang = LANG === 'zh' ? 'zh-CN' : 'en';
+const T = {
+  zh: {
+    brand: '涂鸦过山车', h1: '一笔画<br>画出你的过山车', sub: '你画的任意一条线，都会变成真的轨道。',
+    tooShort: '太短了，画长一点吧！', start: '▶ 出发', readyMsg: '轨道已就绪，点出发开始乘坐',
+    kick: '涂鸦过山车', done: '欢迎回到站台！',
+    share: '分享到 X（朋友也能坐）', again: '再坐一次', fresh: '重新画', save: '保存图片',
+    ride: '🎢 乘坐这条轨道', no3d: '你的浏览器不支持 3D，将以侧视图行驶。', mapOn: '显示地图', mapOff: '隐藏地图', rails: '轨道', posts: '支柱', map: '地图', shown: '开', hidden: '关',
+    sKick: '有人画了这条轨道', sName: '要坐一次吗？', sDraw: '我自己画',
+    tweet: '我一笔画出了一座过山车 🎢\n来坐坐看：', tag: '涂鸦过山车',
+    // 仪表
+    speedLabel: '速度', gLabel: 'G 值', slowmo: '慢动作', slowmoOff: '正常',
+    // 弹射
+    launchLabel: '弹射速度', launch: '⚡ 电磁弹射', gravityStart: '重力起步',
+    noLaunch: '不弹射（重力起步）', launchToast: '⚡ 电磁弹射 · {v}',
+    // 成绩
+    stats: '本次成绩', maxSpeed: '最高速度', maxG: '最大 G', duration: '用时', entrySpeed: '入站速度', launchA: '弹射加速度',
+    // 轨道工坊
+    workshop: '轨道工坊', tabList: '我的轨道', tabJson: '粘贴 JSON', tabEdit: '编辑器',
+    rideIt: '试跑', editIt: '编辑', delIt: '删除', close: '关闭', back: '返回',
+    importFile: '导入文件', exportTrack: '导出轨道', copyLink: '复制分享链接', check: '校验',
+    validateOk: '校验通过', validateFail: '校验没通过', copied: '分享链接已复制', copyFail: '复制失败，请手动选中',
+    noTracks: '还没有轨道。可以粘贴一段 JSON 试跑，或者点「编辑器」自己摆点。',
+    listHint: '这些来自 tracks.js。往那个文件里加一条，刷新后就会出现在这里。',
+    jsonHint: '格式：{"id":"my-track","name":"我的轨道","ground":70,"launch":300,"points":[[0,0],[40,30],[80,0]]}\npoints 是 [距起点米数, 离地高度]，向上为正。',
+    editHint: '拖动圆点移动控制点 · 点空白处插入新点 · 双击圆点删除',
+    undo: '撤销', clear: '清空', editDone: '完成', cancel: '取消',
+    snippet: '导出为 tracks.js 片段', snippetDone: '已复制，粘到 tracks.js 里就多一条轨道',
+    editTrack: '✎ 编辑这条轨道', openWorkshop: '🛠 轨道工坊',
+    needPoints: '至少要有 3 个控制点',
+    totalLen: '总长', peak: '最高点', points: '控制点',
+    realDrag: '真实空气阻力', arcadeDrag: '街机阻力',
+    realDragHint: '开：完全保留原作的阻力公式，10000 km/h 会被空气瞬间吃掉，图一乐。关：街机模式，高速时阻力封顶，弹射才坐得住。',
+    slowHint: '弹射速度很高，已自动切到慢动作 —— 仪表上的数字仍是真实速度。',
+  },
+  en: {
+    brand: 'Doodle Coaster', h1: 'Draw a roller coaster<br>in one stroke', sub: 'Any line you draw becomes a ride.',
+    tooShort: 'Too short — draw a longer line!', start: '▶ Start', readyMsg: 'Track ready! Tap Start to ride.',
+    kick: 'Doodle Coaster', done: 'Welcome back to the station!',
+    share: 'Share on X — friends can ride it', again: 'Ride again', fresh: 'Redraw', save: 'Save image',
+    ride: '🎢 Ride this coaster', no3d: 'Your browser can’t show 3D, so you’ll ride it from the side.', mapOn: 'Map on', mapOff: 'Map off', rails: 'Track', posts: 'Pillars', map: 'Map', shown: 'on', hidden: 'off',
+    sKick: 'Someone drew this coaster', sName: 'Take a ride?', sDraw: 'Draw my own',
+    tweet: 'I drew a roller coaster in one stroke 🎢\nRide it:', tag: 'DoodleCoaster'
+  },
+};
+// 以英文为基底再覆盖，这样新增的界面文案在某个语言缺失时会自动回落到英文。
+// 后加的界面（仪表 / 弹射 / 工坊 / 编辑器）先补齐英文，缺哪门语言都不会出现 undefined。
+Object.assign(T.en, {
+  speedLabel: 'Speed', gLabel: 'G force', slowmo: 'Slow-mo',
+  launchLabel: 'Launch speed', launch: '⚡ Electromagnetic launch', gravityStart: 'Gravity',
+  noLaunch: 'No launch (roll out by gravity)', launchToast: '⚡ Launch · {v}',
+  maxSpeed: 'Top speed', maxG: 'Peak G', duration: 'Time', entrySpeed: 'Station entry', launchA: 'Launch accel',
+  workshop: 'Track workshop', tabList: 'Tracks', tabJson: 'Paste JSON', tabEdit: 'Editor',
+  rideIt: 'Ride', editIt: 'Edit', delIt: 'Delete', close: 'Close',
+  importFile: 'Import file', exportTrack: 'Export track', copyLink: 'Copy share link', check: 'Validate',
+  validateOk: 'Looks good', validateFail: 'Validation failed',
+  copied: 'Share link copied', copyFail: 'Copy failed — select it manually',
+  noTracks: 'No tracks yet. Paste some JSON, or open the editor and place the points yourself.',
+  listHint: 'These come from tracks.js — add an entry there and it shows up here.',
+  jsonHint: 'Shape: {"id":"my-track","name":"My track","ground":70,"launch":300,"points":[[0,0],[40,30],[80,0]]}\npoints are [metres along, metres above the ground].',
+  editHint: 'Drag a dot to move a control point · tap empty space to insert · double-tap a dot to delete',
+  undo: 'Undo', clear: 'Clear', editDone: 'Done', cancel: 'Cancel',
+  snippet: 'Copy as tracks.js snippet', snippetDone: 'Copied — paste it into tracks.js',
+  editTrack: '✎ Edit this track', openWorkshop: '🛠 Track workshop',
+  needPoints: 'A track needs at least 3 control points',
+  totalLen: 'Length', peak: 'Peak', points: 'Control points',
+  realDrag: 'Real air drag', arcadeDrag: 'Arcade drag',
+  realDragHint: 'On: the original drag formula, verbatim — at 10 000 km/h the air eats the train instantly (just for laughs). Off: arcade mode caps drag so a hypersonic launch stays rideable.',
+  slowHint: 'That launch is very fast, so slow-motion is on — the gauge still shows real values.',
+});
+const L = Object.assign({}, T.en, T[LANG] || {});
+
+/* ---------- world (1 unit = 1 m; the drawer's screen is 10 px per metre) ---------- */
+const PX_PER_M = 10, GROUND_PX = 76;
+const cv = $('#cv');
+let ctx = cv.getContext('2d');
+let W = 0, H = 0, DPR = 1;
+let view = { s: PX_PER_M, ox: 0, oy: 0 }, baseView = null, fitted = false;
+let groundY = 0;                 // world y of the ground
+let mode = 'draw';               // draw | drawing | ready | ride | done | shared
+let raw = [], pid = null, ctrl = null, track = null, code = '', codeKey = 't', ride = null;
+
+function resize() {
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  W = innerWidth; H = innerHeight;
+  cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
+  if (!track && mode !== 'drawing') { view = { s: PX_PER_M, ox: 0, oy: 0 }; groundY = (H - GROUND_PX) / PX_PER_M; }
+  else if (track && (fitted || mode === 'shared')) { fitView(); baseView = { ...view }; }
+  buildBackdrop();
+}
+addEventListener('resize', resize);
+
+const toScreen = (x, y) => [x * view.s + view.ox, y * view.s + view.oy];
+const toWorld = e => ({ x: (e.clientX - view.ox) / view.s, y: (e.clientY - view.oy) / view.s });
+
+/* ---------- drawing ---------- */
+cv.addEventListener('pointerdown', e => {
+  if (mode !== 'draw' || pid !== null) return;
+  audioInit();
+  pid = e.pointerId; mode = 'drawing';
+  try { cv.setPointerCapture(pid); } catch (_) {}
+  const p = toWorld(e); p.y = Math.min(p.y, groundY - 1.2);
+  raw = [p];
+  $('#hint').classList.add('off');
+});
+cv.addEventListener('pointermove', e => {
+  if (mode !== 'drawing' || e.pointerId !== pid) return;
+  const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
+  for (const ev of (evs.length ? evs : [e])) {
+    const p = toWorld(ev); p.y = Math.min(p.y, groundY - 1.2);
+    const l = raw[raw.length - 1];
+    if (Math.hypot(p.x - l.x, p.y - l.y) >= .2) raw.push(p);
+  }
+});
+const endDraw = e => {
+  if (e.pointerId !== pid) return;
+  pid = null;
+  if (mode === 'drawing') finishDraw();
+};
+cv.addEventListener('pointerup', endDraw); cv.addEventListener('pointercancel', endDraw);
+
+const plen = pts => { let s = 0; for (let i = 1; i < pts.length; i++) s += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y); return s; };
+
+function finishDraw() {
+  if (raw.length < 3 || plen(raw) < 25) { toast(L.tooShort); resetDraw(); return; }
+  const c = buildControl(raw, groundY);
+  code = encode(c, groundY); codeKey = 't';
+  loadCode(code, false, UNIT, c[0]);
+  baseView = { ...view };
+  enterReady();
+}
+function prepare3D() { setTimeout(() => { try { if (track && init3D() && (!scene3d || scene3d.track !== track)) build3D(); } catch (e) {} }, 80); }
+function enterReady() {
+  mode = 'ready';
+  ride = newRide();                                  // the train waits at the station
+  prepare3D();
+  document.body.classList.add('hasTrack', 'ready');
+  document.body.classList.remove('riding');
+  $('#hint').classList.add('off');
+}
+function resetDraw() {
+  raw = []; ctrl = null; track = null; ride = null; fitted = false; baseView = null;
+  currentDef = null; editing = false; editPid = null; editDrag = false; editDirty = false; editPts = [];
+  view = { s: PX_PER_M, ox: 0, oy: 0 }; groundY = (H - GROUND_PX) / PX_PER_M;
+  mode = 'draw'; document.body.classList.remove('riding', 'hasTrack', 'ready', 'editing', 'hyperspeed', 'slowmo');
+  setView3d(false); scene3d = null;
+  $('#hint').classList.remove('off'); $('#result').hidden = true; $('#sharedOv').hidden = true;
+  buildBackdrop();
+  if (location.hash) history.replaceState(null, '', location.pathname + location.search);
+}
+
+// resample a polyline every `step` metres
+
+// gaussian blur of a list of numbers (sigma in samples, edges held)
+
+// smooth the hand-drawn stroke and resample it every metre — these become the shareable control points.
+// We smooth the direction of travel rather than the positions: finger wobble melts away,
+// yet a loop stays a loop of the same size. A slow correction then keeps the shape where it was drawn.
+
+
+
+/* ---------- share code: first point + per-metre deltas in centimetres (int8), ground as int16 ----------
+   (links made by the first version used decimetres and the key "c=", new ones use "t=") */
+const UNIT = 100;
+function encode(c, gY) {
+  const q = c.map(p => [Math.round(p.x * UNIT), Math.round(p.y * UNIT)]);
+  const bytes = new Uint8Array(2 + (q.length - 1) * 2);
+  const gr = Math.max(-32768, Math.min(32767, Math.round(gY * UNIT) - q[0][1]));
+  bytes[0] = (gr >> 8) & 255; bytes[1] = gr & 255;
+  for (let i = 1; i < q.length; i++) {
+    bytes[2 + (i - 1) * 2] = Math.max(-127, Math.min(127, q[i][0] - q[i - 1][0])) & 255;
+    bytes[3 + (i - 1) * 2] = Math.max(-127, Math.min(127, q[i][1] - q[i - 1][1])) & 255;
+  }
+  let s = ''; bytes.forEach(b => s += String.fromCharCode(b));
+  return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+function decode(str, unit) {
+  const b = atob(str.replace(/-/g, '+').replace(/_/g, '/'));
+  const by = Uint8Array.from(b, ch => ch.charCodeAt(0));
+  if (by.length < 8) throw new Error('short');
+  let gr = (by[0] << 8) | by[1]; if (gr > 32767) gr -= 65536;
+  const pts = [{ x: 0, y: 0 }]; let x = 0, y = 0;
+  for (let i = 2; i + 1 < by.length; i += 2) {
+    const dx = by[i] > 127 ? by[i] - 256 : by[i], dy = by[i + 1] > 127 ? by[i + 1] - 256 : by[i + 1];
+    x += dx; y += dy; pts.push({ x: x / unit, y: y / unit });
+  }
+  return { pts, ground: gr / unit };
+}
+// the drawer and anyone opening the link ride exactly the same decoded track
+function loadCode(c, shared, unit = UNIT, origin = null) {
+  const { pts, ground } = decode(c, unit);
+  if (shared) { ctrl = pts; groundY = ground; }
+  else {
+    const o = origin || raw[0];                    // keep the drawer's own screen position
+    const q0 = [Math.round(o.x * unit) / unit, Math.round(o.y * unit) / unit];
+    ctrl = pts.map(p => ({ x: p.x + q0[0], y: p.y + q0[1] }));
+    groundY = ground + q0[1];
+  }
+  track = buildTrack(ctrl); buildExt(track); buildDepth(track); invalidateTrack();
+  if (shared) fitView();
+}
+
+/* ---------- track: Catmull-Rom through the control points, resampled every 25 cm ---------- */
+
+
+function fitView() {
+  let minX = Infinity, maxX = -Infinity, minY = Infinity;
+  for (const p of ctrl) { minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x); minY = Math.min(minY, p.y); }
+  if (track && track.extB) {                    // room for the train waiting in the station
+    const e = track.extB, j = Math.min(e.xs.length - 1, 40);
+    minX = Math.min(minX, e.xs[j] + 2); maxX = Math.max(maxX, e.xs[j] - 2); minY = Math.min(minY, e.ys[j]);
+  }
+  minY -= 5; minX -= 4; maxX += 6;
+  const top = 76, bottom = H - GROUND_PX;
+  const s = Math.max(2, Math.min(16, Math.min((W - 24) / (maxX - minX), (bottom - top) / (groundY - minY))));
+  view = { s, ox: W / 2 - s * (minX + maxX) / 2, oy: bottom - s * groundY };
+  fitted = true;
+}
+
+/* ---------- ride (fixed time step, so a shared link always rides exactly the same) ---------- */
+
+
+const HOLD = 2.2;                                    // seconds in the station before the train leaves
+
+
+/* ---------- ride flow ---------- */
+function startRide() {
+  if (baseView && !fitted) { view = { ...baseView }; buildBackdrop(); }
+  else if (fitted) { fitView(); buildBackdrop(); }
+  ride = newRide(); ride.hold = HOLD;
+  const kmh = noLaunch ? 0 : launchKmh;
+  if (kmh > 0 && track) applyLaunch(ride, track, kmh);   // 弹射在站台放行后才真正发力（见 launchHook）
+  autoSlow(kmh);
+  gauge.s = gauge.g = gauge.peak = null;
+  mode = 'ride';
+  setView3d(true);                                   // the ride itself is first person; the side view is the mini map
+  const rr = ride; setTimeout(() => { if (ride === rr && mode === 'ride') chime(); }, 450);
+  document.body.classList.add('riding', 'hasTrack');
+  document.body.classList.remove('ready', 'editing');
+  $('#result').hidden = true; $('#sharedOv').hidden = true; $('#hint').classList.add('off');
+}
+function finishRide() {
+  mode = 'done';
+  brake();
+  setTimeout(() => { if (mode === 'done') showResult(); }, 900);
+}
+function showResult() {
+  document.body.classList.remove('riding', 'hyperspeed');
+  setSlowIdx(0);
+  $('#rKick').textContent = L.kick;
+  $('#rName').textContent = L.done;
+  const r = ride, K = v => Math.round(v * 3.6).toLocaleString('zh-CN');
+  const rows = [];
+  if (r && r.launchA > 0) { const a = r.launchA / G; rows.push([L.launchA, a >= 100 ? a.toFixed(0) : a.toFixed(1), 'G']); }
+  if (r) rows.push(
+    [L.maxSpeed, K(r.vmax), 'km/h'],
+    [L.maxG, fmtG(r.gAbsMax), 'G'],
+    [L.duration, r.t.toFixed(r.t >= 20 ? 1 : 2), 's'],
+    [L.entrySpeed, K(r.v), 'km/h'],
+  );
+  $('#rStats').innerHTML = rows.map(x => `<div class="stat"><div class="sk">${x[0]}</div><div class="sv">${x[1]}<small>${x[2]}</small></div></div>`).join('');
+  const url = location.origin + location.pathname + '?lang=' + LANG + '#' + shareHash();
+  $('#rShare').href = `https://twitter.com/intent/tweet?text=${encodeURIComponent(L.tweet)}&url=${encodeURIComponent(url)}&hashtags=${encodeURIComponent(L.tag)}`;
+  $('#rShare').textContent = L.share;
+  $('#rAgain').textContent = L.again; $('#rNew').textContent = L.fresh; $('#rSave').textContent = L.save;
+  $('#rShop').textContent = L.workshop;
+  $('#credit').innerHTML = `${L.brand} · 中文版 + 电磁弹射 / 仪表 / 轨道工坊<br>原作 <a href="https://rakugaki-coaster.pages.dev/" target="_blank" rel="noopener">らくがきコースター</a> by <a href="https://x.com/kikuchitls" target="_blank" rel="noopener">@kikuchitls</a><br><a href="?lang=zh">中文</a> · <a href="?lang=en">English</a>`;
+  $('#result').hidden = false;
+  const h = shareHash();
+  if (!location.hash.includes(h)) history.replaceState(null, '', location.pathname + location.search + '#' + h);
+}
+$('#rAgain').addEventListener('click', startRide);
+$('#bGo').addEventListener('click', () => { if (mode === 'ready') { audioInit(); startRide(); } });
+$('#bRedo').addEventListener('click', () => { if (mode === 'ready') resetDraw(); });
+addEventListener('keydown', e => { if (mode === 'ready' && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); audioInit(); startRide(); } });
+$('#mapBtn').addEventListener('click', () => { setMap(!mapOn); toast(`${L.map}：${mapOn ? L.shown : L.hidden}`); });
+$('#railBtn').addEventListener('click', () => { setShow('rails', !showRails); toast(`${L.rails}：${showRails ? L.shown : L.hidden}`); });
+$('#postBtn').addEventListener('click', () => { setShow('posts', !showPosts); toast(`${L.posts}：${showPosts ? L.shown : L.hidden}`); });
+addEventListener('keydown', e => { if ((e.key === 'm' || e.key === 'M') && view3d) setMap(!mapOn); });
+$('#sPov').addEventListener('click', () => { audioInit(); startRide(); });
+$('#rNew').addEventListener('click', resetDraw);
+$('#redraw').addEventListener('click', resetDraw);
+$('#rSave').addEventListener('click', saveImage);
+$('#sDraw').addEventListener('click', resetDraw);
+
+/* ---------- audio ---------- */
+let AC = null, windG = null, windF = null;
+function audioInit() {
+  try {
+    if (!AC) {
+      const C = window.AudioContext || window.webkitAudioContext; if (!C) return;
+      AC = new C();
+      const len = AC.sampleRate * 2, buf = AC.createBuffer(1, len, AC.sampleRate), d = buf.getChannelData(0);
+      for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+      const src = AC.createBufferSource(); src.buffer = buf; src.loop = true;
+      windF = AC.createBiquadFilter(); windF.type = 'lowpass'; windF.frequency.value = 400;
+      windG = AC.createGain(); windG.gain.value = 0;
+      src.connect(windF); windF.connect(windG); windG.connect(AC.destination); src.start();
+    }
+    if (AC.state !== 'running') {
+      AC.resume().catch(() => {});
+      const b = AC.createBuffer(1, 1, 22050), src = AC.createBufferSource(); src.buffer = b; src.connect(AC.destination); src.start(0);
+    }
+  } catch (e) {}
+}
+['pointerup', 'touchend', 'click', 'keydown'].forEach(ev => addEventListener(ev, audioInit, { passive: true, capture: true }));
+function windSound(v) {
+  if (!AC) return;
+  const a = Math.min(1, v / 35), t = AC.currentTime;
+  windG.gain.setTargetAtTime(a * a * .28, t, .08);
+  windF.frequency.setTargetAtTime(300 + a * 1600, t, .08);
+}
+function click() {
+  if (!AC) return;
+  const o = AC.createOscillator(), g = AC.createGain(), t = AC.currentTime;
+  o.type = 'square'; o.frequency.value = 900;
+  g.gain.setValueAtTime(.05, t); g.gain.exponentialRampToValueAtTime(.0001, t + .03);
+  o.connect(g); g.connect(AC.destination); o.start(t); o.stop(t + .04);
+}
+function chime() {                                    // two soft notes: the train is about to leave
+  if (!AC) return;
+  const t = AC.currentTime;
+  [[659.3, 0], [523.3, .42]].forEach(([f, d]) => {
+    const o = AC.createOscillator(), g = AC.createGain();
+    o.type = 'sine'; o.frequency.value = f;
+    g.gain.setValueAtTime(.0001, t + d); g.gain.exponentialRampToValueAtTime(.16, t + d + .02); g.gain.exponentialRampToValueAtTime(.0001, t + d + 1.1);
+    o.connect(g); g.connect(AC.destination); o.start(t + d); o.stop(t + d + 1.15);
+  });
+}
+function release() {                                  // brakes let go: a clunk and a short hiss
+  if (!AC) return;
+  const t = AC.currentTime, o = AC.createOscillator(), g = AC.createGain();
+  o.type = 'sine'; o.frequency.setValueAtTime(120, t); o.frequency.exponentialRampToValueAtTime(55, t + .25);
+  g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(.3, t + .01); g.gain.exponentialRampToValueAtTime(.0001, t + .3);
+  o.connect(g); g.connect(AC.destination); o.start(t); o.stop(t + .32);
+  const len = AC.sampleRate * .45, buf = AC.createBuffer(1, len, AC.sampleRate), d = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2);
+  const src = AC.createBufferSource(); src.buffer = buf;
+  const f = AC.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = 1800;
+  const hg = AC.createGain(); hg.gain.value = .09;
+  src.connect(f); f.connect(hg); hg.connect(AC.destination); src.start(t + .05);
+}
+function brake() {
+  if (!AC) return;
+  const len = AC.sampleRate * .6, buf = AC.createBuffer(1, len, AC.sampleRate), d = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
+  const s = AC.createBufferSource(); s.buffer = buf;
+  const f = AC.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 2400; f.Q.value = 1.5;
+  const g = AC.createGain(); g.gain.value = .25;
+  s.connect(f); f.connect(g); g.connect(AC.destination); s.start();
+}
+
+function toast(t) { const el = $('#toast'); el.textContent = t; el.classList.add('in'); clearTimeout(toast.t); toast.t = setTimeout(() => el.classList.remove('in'), 1800); }
+
+/* ---------- rendering ---------- */
+let backdrop = null;
+function buildBackdrop() {
+  backdrop = document.createElement('canvas');
+  backdrop.width = cv.width; backdrop.height = cv.height;
+  const b = backdrop.getContext('2d'); b.scale(DPR, DPR);
+  const sky = b.createLinearGradient(0, 0, 0, H);
+  sky.addColorStop(0, '#7cc3ee'); sky.addColorStop(.7, '#cfeaf8'); sky.addColorStop(1, '#eaf6fb');
+  b.fillStyle = sky; b.fillRect(0, 0, W, H);
+  const sg = b.createRadialGradient(W * .82, H * .16, 0, W * .82, H * .16, 120);
+  sg.addColorStop(0, 'rgba(255,250,220,.95)'); sg.addColorStop(.25, 'rgba(255,245,200,.6)'); sg.addColorStop(1, 'rgba(255,245,200,0)');
+  b.fillStyle = sg; b.fillRect(0, 0, W, H);
+  const cloud = (x, y, s) => { b.fillStyle = 'rgba(255,255,255,.85)'; [[0, 0, 1], [.9, -.35, .8], [1.7, 0, .9], [.8, .25, .9]].forEach(([dx, dy, r]) => { b.beginPath(); b.arc(x + dx * 30 * s, y + dy * 30 * s, 26 * r * s, 0, Math.PI * 2); b.fill(); }); };
+  cloud(W * .12, H * .17, .9); cloud(W * .55, H * .1, .7); cloud(W * .82, H * .24, .55);
+  const gy = groundY * view.s + view.oy;
+  b.fillStyle = '#b6dcc4';
+  b.beginPath(); b.moveTo(0, gy);
+  for (let x = 0; x <= W; x += 20) b.lineTo(x, gy - 40 - 26 * Math.sin(x / 140) - 14 * Math.sin(x / 53 + 1));
+  b.lineTo(W, gy); b.closePath(); b.fill();
+  const gg = b.createLinearGradient(0, gy, 0, Math.max(gy + 1, H));
+  gg.addColorStop(0, '#7dc36b'); gg.addColorStop(1, '#4f9a45');
+  b.fillStyle = gg; b.fillRect(0, gy, W, Math.max(0, H - gy));
+  b.fillStyle = 'rgba(0,0,0,.08)'; b.fillRect(0, gy, W, 3);
+}
+
+/* ---------- track drawing (2D): the drawn line plus a station before it and a short run-out after it ---------- */
+const CAR_GAP = 2.6, LEAD_OFF = 1.3, EXT_LEN = 30;
+const carScale = () => Math.max(1.8, 26 / (2.4 * view.s));          // never smaller than ~26 px per car
+// rail past both ends, easing to level: the station where the train waits, and where it rolls to a stop
+function buildExt(t) {
+  const mk = (x, y, dx, dy) => {
+    const xs = [x], ys = [y], a0 = Math.atan2(dy, dx);
+    let d = (dx >= 0 ? 0 : Math.PI) - a0; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI;
+    for (let i = 1; i * DS <= EXT_LEN; i++) {
+      const k = Math.min(1, i * DS / 4), a = a0 + d * k * k * (3 - 2 * k);
+      x += Math.cos(a) * DS; y = Math.min(groundY - .8, y + Math.sin(a) * DS);
+      xs.push(x); ys.push(y);
+    }
+    return { xs, ys };
+  };
+  t.extB = mk(t.xs[0], t.ys[0], -t.tx[0], -t.ty[0]);
+  t.extE = mk(t.xs[t.n - 1], t.ys[t.n - 1], t.tx[t.n - 1], t.ty[t.n - 1]);
+}
+// a point on the rail, also before the start (station) and past the end (run-out)
+function trainPos(s) {
+  const t = track;
+  if (s >= 0 && s <= t.len) return sample(t, s);
+  const back = s < 0, e = back ? t.extB : t.extE;
+  const f = Math.min(e.xs.length - 1.001, (back ? -s : s - t.len) / DS), i = Math.floor(f), u = f - i;
+  let tx = e.xs[i + 1] - e.xs[i], ty = e.ys[i + 1] - e.ys[i]; const m = Math.hypot(tx, ty) || 1;
+  tx /= m; ty /= m; if (back) { tx = -tx; ty = -ty; }
+  return { x: e.xs[i] + (e.xs[i + 1] - e.xs[i]) * u, y: e.ys[i] + (e.ys[i + 1] - e.ys[i]) * u, tx, ty };
+}
+// where the track crosses or runs over itself, give the parts different depths (sideways in 3D),
+// so they pass in front of / behind each other instead of colliding. Smooth, and the same for everyone who opens the link.
+function buildDepth(t) {
+  const D = 2.5, ZSEP = 3.2, SIG = 2.2, ITERS = 300, st = Math.round(1 / DS), m = Math.floor((t.n - 1) / st) + 1;
+  const px = new Float64Array(m), py = new Float64Array(m);
+  for (let k = 0; k < m; k++) { px[k] = t.xs[k * st]; py[k] = t.ys[k * st]; }
+  const grid = new Map(), key = (i, j) => i * 100003 + j;
+  for (let k = 0; k < m; k++) { const g = key(Math.floor(px[k] / D), Math.floor(py[k] / D)); if (!grid.has(g)) grid.set(g, []); grid.get(g).push(k); }
+  const pairs = [];
+  for (let a = 0; a < m; a++) {
+    const ci = Math.floor(px[a] / D), cj = Math.floor(py[a] / D);
+    for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) {
+      const arr = grid.get(key(ci + di, cj + dj)); if (!arr) continue;
+      for (const b of arr) { if (b <= a) continue; const d = Math.hypot(px[a] - px[b], py[a] - py[b]); if (d < D && b - a > d * 1.8 + 3) pairs.push(a, b); }
+    }
+  }
+  let z = new Float64Array(m);
+  if (pairs.length) {
+    const R = Math.ceil(SIG * 3), w = []; let ws = 0;
+    for (let j = -R; j <= R; j++) { const v = Math.exp(-j * j / (2 * SIG * SIG)); w.push(v); ws += v; }
+    const dz = new Float64Array(m), cnt = new Float64Array(m), zs = new Float64Array(m);
+    for (let it = 0; it < ITERS; it++) {
+      dz.fill(0); cnt.fill(0);
+      for (let q = 0; q < pairs.length; q += 2) {
+        const a = pairs[q], b = pairs[q + 1], diff = z[b] - z[a], def = ZSEP * 1.15 - Math.abs(diff);
+        if (def > 0) { const sg = diff >= 0 ? 1 : -1; dz[b] += sg * def / 2; dz[a] -= sg * def / 2; cnt[a]++; cnt[b]++; }
+      }
+      for (let k = 0; k < m; k++) if (cnt[k]) z[k] += dz[k] / cnt[k];
+      for (let k = 0; k < m; k++) { let s = 0; for (let j = -R; j <= R; j++) s += z[Math.max(0, Math.min(m - 1, k + j))] * w[j + R]; zs[k] = s / ws; }
+      z.set(zs);
+    }
+    let mean = 0; for (let k = 0; k < m; k++) mean += z[k]; mean /= m;
+    for (let k = 0; k < m; k++) z[k] -= mean;
+  }
+  t.zs = new Float32Array(t.n);
+  for (let i = 0; i < t.n; i++) { const f = Math.min(m - 1.001, i / st), k = Math.floor(f); t.zs[i] = m > 1 ? z[k] + (z[k + 1] - z[k]) * (f - k) : 0; }
+}
+
+let railCache = null, layer = null;
+function mixHex(a, b, k) {
+  const A = parseInt(a.slice(1), 16), Bc = parseInt(b.slice(1), 16);
+  const c = [16, 8, 0].map(sh => Math.round(((A >> sh) & 255) * (1 - k) + ((Bc >> sh) & 255) * k));
+  return `rgb(${c[0]},${c[1]},${c[2]})`;
+}
+function railPath() {
+  const t = track, CAR = carScale();
+  if (railCache && railCache.t === t && railCache.CAR === CAR) return railCache;
+  const nb = Math.min(t.extB.xs.length - 1, Math.ceil((2 * CAR_GAP - LEAD_OFF + 1.6) * CAR / DS));
+  const ne = Math.min(t.extE.xs.length - 1, Math.ceil((LEAD_OFF + 2) * CAR / DS));
+  const xs = [], ys = [], zs = [];
+  for (let i = nb; i >= 1; i--) { xs.push(t.extB.xs[i]); ys.push(t.extB.ys[i]); zs.push(t.zs[0]); }
+  const i0 = xs.length;
+  for (let i = 0; i < t.n; i++) { xs.push(t.xs[i]); ys.push(t.ys[i]); zs.push(t.zs[i]); }
+  const i1 = xs.length - 1;
+  for (let i = 1; i <= ne; i++) { xs.push(t.extE.xs[i]); ys.push(t.extE.ys[i]); zs.push(t.zs[t.n - 1]); }
+  const n = xs.length, tx = new Float32Array(n), ty = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const a = Math.max(0, i - 1), b = Math.min(n - 1, i + 1), dx = xs[b] - xs[a], dy = ys[b] - ys[a], m = Math.hypot(dx, dy) || 1;
+    tx[i] = dx / m; ty[i] = dy / m;
+  }
+  // short pieces, drawn back to front; the far ones a little paler
+  let zmin = Infinity, zmax = -Infinity; for (const z of zs) { zmin = Math.min(zmin, z); zmax = Math.max(zmax, z); }
+  const chunks = [], CH = 6;
+  for (let a = 0; a < n - 1; a += CH) {
+    const b = Math.min(n - 1, a + CH); let z = 0; for (let i = a; i <= b; i++) z += zs[i]; z /= b - a + 1;
+    const fade = zmax - zmin > 1 ? (zmax - z) / (zmax - zmin) * .2 : 0;
+    chunks.push({ a, b, z, s0: (a - i0) * DS, s1: (b - i0) * DS, rail: mixHex('#d6342c', '#c4e3f4', fade), tie: mixHex('#8b1e19', '#c4e3f4', fade), post: `rgba(110,125,138,${(.55 * (1 - fade)).toFixed(2)})` });
+  }
+  chunks.sort((p, q) => p.z - q.z);
+  return (railCache = { t, CAR, xs, ys, zs, tx, ty, n, i0, i1, chunks });
+}
+function drawChunk(R, c, part = 3) {           // part: 1 = the gap only, 2 = the track only, 3 = both
+  const s = view.s, a = c.a, b = c.b, gy = groundY * s + view.oy;
+  const line = (off, i0, i1) => {
+    ctx.beginPath();
+    for (let i = i0; i <= i1; i++) { const [x, y] = toScreen(R.xs[i] - R.ty[i] * off, R.ys[i] + R.tx[i] * off); i > i0 ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }
+    ctx.stroke();
+  };
+  ctx.lineJoin = 'round'; ctx.lineCap = 'butt';
+  if (part & 1) {                                // cut a gap in whatever this piece passes in front of
+    ctx.globalCompositeOperation = 'destination-out'; ctx.strokeStyle = '#000'; ctx.lineWidth = Math.max(7, 1.25 * s); line(0, a, b);
+    ctx.globalCompositeOperation = 'source-over';
+  }
+  if (!(part & 2)) return;
+  // supports
+  ctx.lineWidth = Math.max(1, .18 * s); ctx.strokeStyle = c.post; ctx.beginPath();
+  for (let i = a; i < b; i++) if ((((i - R.i0) % 24) + 24) % 24 === 0) { const [x, y] = toScreen(R.xs[i], R.ys[i]); if (y < gy - 4) { ctx.moveTo(x, y + .3 * s); ctx.lineTo(x, gy); } }
+  ctx.stroke();
+  // ties
+  ctx.lineWidth = Math.max(1, .14 * s); ctx.strokeStyle = c.tie; ctx.beginPath();
+  for (let i = a; i < b; i++) if ((((i - R.i0) % 4) + 4) % 4 === 0) {
+    const nx = -R.ty[i], ny = R.tx[i], [x, y] = toScreen(R.xs[i], R.ys[i]);
+    ctx.moveTo(x + nx * .32 * s, y + ny * .32 * s); ctx.lineTo(x - nx * .32 * s, y - ny * .32 * s);
+  }
+  ctx.stroke();
+  // two rails (one sample of overlap with the neighbours, so the joins don't show)
+  ctx.lineWidth = Math.max(2, .16 * s); ctx.strokeStyle = c.rail;
+  const a1 = Math.max(0, a - 1), b1 = Math.min(R.n - 1, b + 1);
+  line(.3, a1, b1); line(-.3, a1, b1);
+}
+function drawStation(R) {
+  const s = view.s, CAR = R.CAR, jEnd = R.i0;
+  let minX = Infinity, maxX = -Infinity, top = Infinity;
+  for (let j = 0; j <= jEnd; j++) { minX = Math.min(minX, R.xs[j]); maxX = Math.max(maxX, R.xs[j]); top = Math.min(top, R.ys[j]); }
+  const roofH = Math.max(3.6, 2.05 * CAR), [rx0, ry] = toScreen(minX - .4, top - roofH), [rx1] = toScreen(maxX + .4, 0);
+  const post = (j) => { const [px, py] = toScreen(R.xs[j], R.ys[j]); ctx.fillRect(px - .12 * s, ry, .24 * s, Math.max(0, py - ry - .3 * s)); };
+  ctx.fillStyle = '#2d3e4f'; post(0); post(jEnd);
+  ctx.fillRect(rx0, ry, rx1 - rx0, .5 * s);
+  ctx.fillStyle = '#f2b632'; ctx.fillRect(rx0 - .2 * s, ry - .38 * s, rx1 - rx0 + .4 * s, .4 * s);
+  ctx.fillStyle = 'rgba(255,255,255,.35)'; ctx.fillRect(rx0 - .2 * s, ry - .38 * s, rx1 - rx0 + .4 * s, .1 * s);
+  // finish flag
+  const [ex, ey] = toScreen(R.xs[R.i1], R.ys[R.i1]);
+  ctx.fillStyle = '#2d3e4f'; ctx.fillRect(ex - .1 * s, ey - 4 * s, .2 * s, 4 * s);
+  const fs = .6 * s;
+  for (let r = 0; r < 2; r++) for (let c = 0; c < 3; c++) { ctx.fillStyle = (r + c) % 2 ? '#fff' : '#14202b'; ctx.fillRect(ex + .1 * s + c * fs, ey - 4 * s + r * fs, fs, fs); }
+}
+// the whole track, back to front, drawn once into its own layer (redrawn only when the view changes)
+function trackLayer(R) {
+  const o = layer;
+  if (o && o.R === R && o.s === view.s && o.ox === view.ox && o.oy === view.oy && o.w === cv.width && o.h === cv.height) return o.c;
+  const c = o ? o.c : document.createElement('canvas');
+  c.width = cv.width; c.height = cv.height;
+  const main = ctx; ctx = c.getContext('2d'); ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  const z0 = R.zs[R.i0]; let station = false;
+  for (const ch of R.chunks) { if (!station && ch.z > z0 + .01) { drawStation(R); station = true; } drawChunk(R, ch); }
+  if (!station) drawStation(R);
+  ctx = main;
+  layer = { R, s: view.s, ox: view.ox, oy: view.oy, w: cv.width, h: cv.height, c };
+  return c;
+}
+// pieces of track that pass in front of the train get their rails drawn again over it
+function draw2D(dt) {
+  const R = railPath(), CAR = R.CAR;
+  ctx.drawImage(trackLayer(R), 0, 0, W, H);
+  if (!ride) return;
+  const lead = ride.s + LEAD_OFF * CAR, s0 = lead - (2 * CAR_GAP + 1.7) * CAR - 1, s1 = lead + 1.8 * CAR + 1;
+  const zt = zAt(track, Math.max(0, Math.min(track.len, lead - CAR_GAP * CAR)));
+  drawTrain(dt);
+  for (const c of R.chunks) if (c.z > zt + .5 && (c.s1 < s0 || c.s0 > s1)) drawChunk(R, c, 2);
+}
+
+/* ---------- the train (2D) ---------- */
+const CAR_COLORS = ['#ffc93c', '#3d9df2', '#2fbf8a'];
+// two riders per car, front seat first
+const RIDERS = [
+  { skin: '#f3c7a1', hair: '#2b2522', style: 0, shirt: '#ffffff', brave: 1 },
+  { skin: '#e2a97e', hair: '#6b4024', style: 1, shirt: '#2f9e8f', brave: 1 },
+  { skin: '#c98c5e', hair: '#1f1a17', style: 3, cap: '#e2453b', shirt: '#3a6fd8', brave: 0 },
+  { skin: '#f6d2b5', hair: '#d9a441', style: 2, shirt: '#f08a2c', brave: 1 },
+  { skin: '#8e5a3a', hair: '#1b1714', style: 0, shirt: '#7b5cd6', brave: 1 },
+  { skin: '#efbf98', hair: '#a8452c', style: 1, shirt: '#e4507b', brave: 0 }
+];
+function tint(hex, k) {           // k > 0 lighter, k < 0 darker
+  const n = parseInt(hex.slice(1), 16);
+  const c = [n >> 16, (n >> 8) & 255, n & 255].map(v => Math.round(k > 0 ? v + (255 - v) * k : v * (1 + k)));
+  return `rgb(${c[0]},${c[1]},${c[2]})`;
+}
+const rrect = (x, y, w, h, r) => { ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x, y, w, h, r) : ctx.rect(x, y, w, h); };
+function limb(ax, ay, bx, by, cx, cy, sleeve, skin) {
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = sleeve; ctx.lineWidth = .085; ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+  ctx.strokeStyle = skin; ctx.lineWidth = .068; ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(cx, cy); ctx.stroke();
+  ctx.fillStyle = skin; ctx.beginPath(); ctx.arc(cx, cy, .048, 0, 7); ctx.fill();
+}
+function drawTrain(dt) {
+  const r = ride, s = view.s, CAR = carScale(), now = performance.now() / 1000;
+  if (!r.riders) r.riders = RIDERS.map((p, i) => ({ a: 0, ph: i * 1.7 }));
+  const moving = mode === 'ride' && !r.ended;
+  const thrill = moving && r.t > .5 && (r.v > 13 || r.g < .45);
+  const lean = moving ? Math.max(-.06, Math.min(.12, (r.g - 1) * .035)) : 0;    // G presses them back
+  const lift = moving ? Math.max(0, Math.min(.09, (.4 - r.g) * .06)) : 0;       // airtime lifts them off the seat
+  const flow = moving ? Math.min(1, r.v / 26) : 0;                               // hair in the wind
+  const railTop = -(.3 + Math.max(.08, 1 / s)) / CAR, WR = .17, WY = railTop - WR, B = WY - .1;
+  for (let k = 2; k >= 0; k--) {
+    const p = trainPos(r.s + LEAD_OFF * CAR - k * CAR_GAP * CAR);
+    const ux = track.sigma * p.ty, uy = -track.sigma * p.tx;                    // the riders' up
+    const [x, y] = toScreen(p.x, p.y), col = CAR_COLORS[k], lead = k === 0;
+    ctx.save();
+    ctx.setTransform(DPR * s * p.tx, DPR * s * p.ty, DPR * s * -ux, DPR * s * -uy, DPR * x, DPR * y);
+    ctx.scale(CAR, CAR);
+    // local units: +x forward, -y up, 1 = CAR metres
+    // coupling, chassis and wheels
+    ctx.fillStyle = '#26323d';
+    if (k < 2) ctx.fillRect(-1.42, B + .02, .4, .07);
+    rrect(-.98, B - .02, 1.98, WY - B + .08, .05); ctx.fill();
+    const rot = r.s / (WR * CAR);
+    for (const wx of [-.68, .68]) {
+      ctx.fillStyle = '#1b232b'; ctx.beginPath(); ctx.arc(wx, WY, WR, 0, 7); ctx.fill();
+      ctx.fillStyle = '#9aa7b3'; ctx.beginPath(); ctx.arc(wx, WY, WR * .52, 0, 7); ctx.fill();
+      ctx.strokeStyle = '#1b232b'; ctx.lineWidth = .03; ctx.beginPath();
+      for (let q = 0; q < 3; q++) { const a = rot + q * 2.094; ctx.moveTo(wx, WY); ctx.lineTo(wx + Math.cos(a) * WR * .5, WY + Math.sin(a) * WR * .5); }
+      ctx.stroke();
+    }
+    // seat backs (with headrests)
+    for (const sx of [.42, -.5]) {
+      ctx.fillStyle = '#2f3b47'; rrect(sx - .37, B - 1.06, .17, .7, .07); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,.12)'; ctx.fillRect(sx - .35, B - 1.02, .04, .6);
+    }
+    // riders
+    const people = [];
+    for (let j = 0; j < 2; j++) {
+      const P = RIDERS[k * 2 + j], st = r.riders[k * 2 + j], sx = j === 0 ? .42 : -.5;
+      const want = thrill ? (P.brave ? 1 : (r.g < .2 ? .55 : 0)) : 0;
+      st.a += (want - st.a) * Math.min(1, dt * (want > st.a ? 6 : 3));
+      const a = st.a, wave = Math.sin(now * 8 + st.ph) * .05 * a;
+      const hx = sx - lean, hy = B - 1.15 - lift, HR = .2, shx = sx - lean * .6, shy = B - .88 - lift;
+      const arm = (dx) => {
+        const ex = shx + dx + .16 + (.1 - .16) * a, ey = shy + .18 + (-.4 - .18) * a;
+        const hx2 = shx + dx + .3 + (.17 + wave - .3) * a, hy2 = B - .6 + (B - 1.68 - lift - (B - .6)) * a;
+        return [shx + dx, shy, ex, ey, hx2, hy2];
+      };
+      people.push({ P, a, sx, hx, hy, HR, arm });
+      // far arm, behind the body
+      const fa = arm(-.07); limb(...fa, tint(P.shirt, -.25), tint(P.skin, -.18));
+      // long hair falls behind the shoulders
+      if (P.style === 1) {
+        ctx.fillStyle = P.hair; ctx.beginPath();
+        ctx.moveTo(hx - HR * .1, hy - HR * 1.02);
+        ctx.quadraticCurveTo(hx - HR * 1.35 - flow * .2, hy - HR * .6, hx - HR * 1.05 - flow * .42, hy + HR * 1.25 - flow * .35);
+        ctx.lineTo(hx - HR * .25, hy + HR * .75); ctx.closePath(); ctx.fill();
+      }
+      // torso
+      ctx.fillStyle = P.shirt; rrect(sx - .2 - lean * .5, B - .98 - lift, .34, .62, .12); ctx.fill();
+      ctx.fillStyle = 'rgba(0,0,0,.08)'; ctx.fillRect(sx - .2 - lean * .5, B - .98 - lift, .08, .62);
+      // head
+      ctx.fillStyle = P.skin; ctx.beginPath(); ctx.arc(hx, hy, HR, 0, 7); ctx.fill();
+      // hair
+      ctx.fillStyle = P.hair;
+      if (P.style === 3) {                                   // cap
+        ctx.beginPath(); ctx.arc(hx, hy + HR * .1, HR * .98, Math.PI * .7, Math.PI * 1.1); ctx.lineTo(hx - HR * .2, hy); ctx.fill();
+        ctx.fillStyle = P.cap; ctx.beginPath(); ctx.arc(hx, hy - HR * .05, HR * 1.06, Math.PI, Math.PI * 2); ctx.closePath(); ctx.fill();
+        rrect(hx + HR * .55, hy - HR * .2, HR * .95, HR * .22, HR * .1); ctx.fill();
+      } else {
+        ctx.beginPath(); ctx.arc(hx, hy, HR * 1.07, Math.PI * .78, Math.PI * 1.93);
+        ctx.quadraticCurveTo(hx + HR * .15, hy - HR * .45, hx - HR * .3, hy + HR * .15); ctx.closePath(); ctx.fill();
+        if (P.style === 2) {                                 // ponytail, flying in the wind
+          const tx = hx - HR * 1.7 - flow * .28, ty = hy - HR * .35 + (1 - flow) * HR * 1.1 - lift * 2;
+          ctx.beginPath(); ctx.moveTo(hx - HR * .8, hy - HR * .75);
+          ctx.quadraticCurveTo(hx - HR * 1.5, hy - HR * .9, tx, ty);
+          ctx.quadraticCurveTo(hx - HR * 1.2, hy - HR * .1, hx - HR * .85, hy - HR * .25); ctx.fill();
+        }
+      }
+      // face: eye, cheek, and an open mouth when they're screaming
+      ctx.fillStyle = '#1d2229'; ctx.beginPath(); ctx.arc(hx + HR * .52, hy - HR * .08, HR * .12, 0, 7); ctx.fill();
+      ctx.fillStyle = 'rgba(255,110,110,.35)'; ctx.beginPath(); ctx.arc(hx + HR * .36, hy + HR * .34, HR * .2, 0, 7); ctx.fill();
+      if (a > .45 || (moving && r.v > 20)) { ctx.fillStyle = '#7a2a22'; ctx.beginPath(); ctx.ellipse(hx + HR * .74, hy + HR * .42, HR * .13, HR * .2, 0, 0, 7); ctx.fill(); }
+    }
+    // car body: a tall back, sloping down to the front
+    const top = B - .82, topAt = x => B - .82 + (x + 1) / 1.95 * .2;
+    ctx.beginPath();
+    ctx.moveTo(-1.12, B - .06); ctx.lineTo(-1.12, top + .12); ctx.quadraticCurveTo(-1.12, top, -.98, top);
+    if (lead) {
+      ctx.lineTo(.9, topAt(.9)); ctx.bezierCurveTo(1.4, topAt(.9), 1.68, B - .32, 1.62, B - .1); ctx.quadraticCurveTo(1.58, B, 1.42, B);
+    } else {
+      ctx.lineTo(.98, topAt(.98)); ctx.quadraticCurveTo(1.13, topAt(1), 1.13, topAt(1) + .16); ctx.lineTo(1.13, B - .06); ctx.quadraticCurveTo(1.13, B, 1.06, B);
+    }
+    ctx.lineTo(-1.06, B); ctx.quadraticCurveTo(-1.12, B, -1.12, B - .06); ctx.closePath();
+    const gr = ctx.createLinearGradient(0, top, 0, B); gr.addColorStop(0, tint(col, .35)); gr.addColorStop(.55, col); gr.addColorStop(1, tint(col, -.28));
+    ctx.fillStyle = gr; ctx.fill();
+    ctx.save(); ctx.clip();
+    ctx.fillStyle = 'rgba(255,255,255,.9)'; ctx.fillRect(-1.2, B - .36, 3, .07);           // racing stripe
+    ctx.fillStyle = tint(col, -.4); ctx.fillRect(-1.2, B - .1, 3, .1);                       // skirt
+    ctx.strokeStyle = 'rgba(255,255,255,.55)'; ctx.lineWidth = .05; ctx.beginPath(); ctx.moveTo(-1.0, top + .03); ctx.lineTo(.95, topAt(.95) + .03); ctx.stroke();   // gloss
+    ctx.restore();
+    ctx.strokeStyle = tint(col, -.45); ctx.lineWidth = .03; ctx.stroke();
+    if (lead) {                                                                                // headlight
+      ctx.fillStyle = '#fff6c8'; ctx.beginPath(); ctx.arc(1.47, B - .2, .07, 0, 7); ctx.fill();
+      ctx.strokeStyle = tint(col, -.45); ctx.lineWidth = .025; ctx.stroke();
+    }
+    // lap bars and the near arms
+    for (const q of people) {
+      ctx.strokeStyle = '#2b3540'; ctx.lineWidth = .06; ctx.lineCap = 'round';
+      const t0 = topAt(q.sx + .02), t1 = topAt(q.sx + .34);
+      ctx.beginPath(); ctx.moveTo(q.sx + .02, t0 - .02); ctx.quadraticCurveTo(q.sx + .2, Math.min(t0, t1) - .16, q.sx + .34, t1 + .02); ctx.stroke();
+      limb(...q.arm(.05), q.P.shirt, q.P.skin);
+    }
+    ctx.restore();
+  }
+}
+
+function frame(now) {
+  const raw = Math.min(.05, (now - (frame.last || now)) / 1000); frame.last = now;
+  // 慢动作只缩放行驶过程：站台等待必须走实时，否则选了 10000 km/h 会在站台上干等一分多钟。
+  const atStation = ride && ride.hold > 0;
+  const dt = atStation ? raw : raw / slowFactor();   // 仪表读的始终是真实 r.v
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  if (backdrop) ctx.drawImage(backdrop, 0, 0, W, H); else { ctx.fillStyle = '#9fd4f2'; ctx.fillRect(0, 0, W, H); }
+
+  if (mode === 'drawing' && raw.length > 1) {
+    ctx.lineWidth = 5; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = '#d6342c';
+    ctx.beginPath(); raw.forEach((p, i) => { const [x, y] = toScreen(p.x, p.y); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }); ctx.stroke();
+    const [sx, sy] = toScreen(raw[0].x, raw[0].y);
+    ctx.fillStyle = '#14202b'; ctx.beginPath(); ctx.arc(sx, sy, 6, 0, 7); ctx.fill();
+  }
+  if (track) {
+    if (mode === 'ride' && ride) {
+      stepRide(track, ride, dt);
+      const r = ride;
+      windSound(r.ended ? 0 : r.v);
+      if (r.lift) { r.clickT -= dt; if (r.clickT <= 0) { click(); r.clickT = .12; } }
+      if (r.ended) { windSound(0); finishRide(); }
+    } else windSound(0);
+    if (view3d) { render3D(); drawMini(); }
+    else draw2D(dt);
+    if (mode === 'edit') drawEditHandles();
+  }
+  if (mode === 'ride' && ride) updateGauge();
+  if (mode === 'edit' && editDirty) { editDirty = false; rebuildEdit(true); updateEditInfo(); }
+  requestAnimationFrame(frame);
+}
+
+/* ---------- 3D ride view: first person, plain WebGL ---------- */
+const glc = $('#gl');
+let gl = null, g3 = null, view3d = false, scene3d = null;
+const V3 = {
+  add: (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]],
+  sub: (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]],
+  mul: (a, k) => [a[0] * k, a[1] * k, a[2] * k],
+  dot: (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2],
+  cross: (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]],
+  norm: a => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; },
+  lerp: (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]
+};
+const M4 = {
+  persp(fy, asp, n, f) { const t = 1 / Math.tan(fy / 2), r = new Float32Array(16); r[0] = t / asp; r[5] = t; r[10] = (f + n) / (n - f); r[11] = -1; r[14] = 2 * f * n / (n - f); return r; },
+  look(e, c, up) {
+    const z = V3.norm(V3.sub(e, c)), x = V3.norm(V3.cross(up, z)), y = V3.cross(z, x);
+    return new Float32Array([x[0], y[0], z[0], 0, x[1], y[1], z[1], 0, x[2], y[2], z[2], 0, -V3.dot(x, e), -V3.dot(y, e), -V3.dot(z, e), 1]);
+  },
+  mul(a, b) { const r = new Float32Array(16); for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) { let s = 0; for (let k = 0; k < 4; k++) s += a[k * 4 + j] * b[i * 4 + k]; r[i * 4 + j] = s; } return r; },
+  basis(X, Y, Z, p) { return new Float32Array([X[0], X[1], X[2], 0, Y[0], Y[1], Y[2], 0, Z[0], Z[1], Z[2], 0, p[0], p[1], p[2], 1]); },
+  inv(m) {
+    const a = m, r = new Float32Array(16);
+    const b00 = a[0] * a[5] - a[1] * a[4], b01 = a[0] * a[6] - a[2] * a[4], b02 = a[0] * a[7] - a[3] * a[4], b03 = a[1] * a[6] - a[2] * a[5],
+      b04 = a[1] * a[7] - a[3] * a[5], b05 = a[2] * a[7] - a[3] * a[6], b06 = a[8] * a[13] - a[9] * a[12], b07 = a[8] * a[14] - a[10] * a[12],
+      b08 = a[8] * a[15] - a[11] * a[12], b09 = a[9] * a[14] - a[10] * a[13], b10 = a[9] * a[15] - a[11] * a[13], b11 = a[10] * a[15] - a[11] * a[14];
+    let det = b00 * b11 - b01 * b10 + b02 * b09 + b03 * b08 - b04 * b07 + b05 * b06; if (!det) return r; det = 1 / det;
+    r[0] = (a[5] * b11 - a[6] * b10 + a[7] * b09) * det; r[1] = (a[2] * b10 - a[1] * b11 - a[3] * b09) * det; r[2] = (a[13] * b05 - a[14] * b04 + a[15] * b03) * det; r[3] = (a[10] * b04 - a[9] * b05 - a[11] * b03) * det;
+    r[4] = (a[6] * b08 - a[4] * b11 - a[7] * b07) * det; r[5] = (a[0] * b11 - a[2] * b08 + a[3] * b07) * det; r[6] = (a[14] * b02 - a[12] * b05 - a[15] * b01) * det; r[7] = (a[8] * b05 - a[10] * b02 + a[11] * b01) * det;
+    r[8] = (a[4] * b10 - a[5] * b08 + a[7] * b06) * det; r[9] = (a[1] * b08 - a[0] * b10 - a[3] * b06) * det; r[10] = (a[12] * b04 - a[13] * b02 + a[15] * b00) * det; r[11] = (a[9] * b02 - a[8] * b04 - a[11] * b00) * det;
+    r[12] = (a[5] * b07 - a[4] * b09 - a[6] * b06) * det; r[13] = (a[0] * b09 - a[1] * b07 + a[2] * b06) * det; r[14] = (a[13] * b01 - a[12] * b03 - a[14] * b00) * det; r[15] = (a[8] * b03 - a[9] * b01 + a[10] * b00) * det;
+    return r;
+  }
+};
+const ID4 = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
+const SUN = V3.norm([-.45, .78, .42]), FOG = [.80, .90, .96], ZEN = [.33, .6, .86];
+
+function init3D() {
+  if (gl) return true;
+  try { gl = glc.getContext('webgl', { antialias: true, alpha: false }) || glc.getContext('experimental-webgl'); } catch (e) { gl = null; }
+  if (!gl) return false;
+  const hp = 'precision ' + (gl.getShaderPrecisionFormat(gl.FRAGMENT_SHADER, gl.HIGH_FLOAT).precision > 0 ? 'highp' : 'mediump') + ' float;';
+  const mk = (vs, fs) => {
+    const sh = (t, s) => { const o = gl.createShader(t); gl.shaderSource(o, s); gl.compileShader(o); if (!gl.getShaderParameter(o, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(o)); return o; };
+    const p = gl.createProgram(); gl.attachShader(p, sh(gl.VERTEX_SHADER, vs)); gl.attachShader(p, sh(gl.FRAGMENT_SHADER, fs)); gl.linkProgram(p);
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+    return p;
+  };
+  const prog = mk(`attribute vec3 aP;attribute vec3 aN;attribute vec3 aC;uniform mat4 uVP;uniform mat4 uM;varying vec3 vC;varying vec3 vN;varying vec3 vW;
+    void main(){vec4 w=uM*vec4(aP,1.);vW=w.xyz;vN=(uM*vec4(aN,0.)).xyz;vC=aC;gl_Position=uVP*w;}`,
+    `${hp}varying vec3 vC;varying vec3 vN;varying vec3 vW;uniform vec3 uE;uniform vec3 uS;uniform vec3 uF;
+    void main(){vec3 n=normalize(vN);float d=max(dot(n,uS),0.);float h=.5+.5*n.y;vec3 c=vC*(.36+.3*h+.6*d);
+    float f=1.-exp(-length(vW-uE)*.0024);gl_FragColor=vec4(mix(c,uF,f),1.);}`);
+  const sky = mk(`attribute vec2 aQ;varying vec2 vQ;void main(){vQ=aQ;gl_Position=vec4(aQ,.9999,1.);}`,
+    `${hp}varying vec2 vQ;uniform mat4 uI;uniform vec3 uE;uniform vec3 uS;uniform vec3 uF;uniform vec3 uZ;
+    void main(){vec4 p=uI*vec4(vQ,1.,1.);vec3 d=normalize(p.xyz/p.w-uE);float t=max(d.y,0.);
+    vec3 c=mix(uF,uZ,pow(t,.55));float s=max(dot(d,uS),0.);c+=vec3(1.,.96,.82)*(pow(s,300.)*1.2+pow(s,8.)*.18);
+    if(d.y<0.)c=uF*.97;gl_FragColor=vec4(c,1.);}`);
+  const qb = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, qb); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+  g3 = {
+    prog, sky, qb,
+    a: { P: gl.getAttribLocation(prog, 'aP'), N: gl.getAttribLocation(prog, 'aN'), C: gl.getAttribLocation(prog, 'aC'), Q: gl.getAttribLocation(sky, 'aQ') },
+    u: { VP: gl.getUniformLocation(prog, 'uVP'), M: gl.getUniformLocation(prog, 'uM'), E: gl.getUniformLocation(prog, 'uE'), S: gl.getUniformLocation(prog, 'uS'), F: gl.getUniformLocation(prog, 'uF'),
+         I: gl.getUniformLocation(sky, 'uI'), sE: gl.getUniformLocation(sky, 'uE'), sS: gl.getUniformLocation(sky, 'uS'), sF: gl.getUniformLocation(sky, 'uF'), sZ: gl.getUniformLocation(sky, 'uZ') }
+  };
+  return true;
+}
+
+/* mesh builder */
+function Mesh() { this.d = []; }
+Mesh.prototype.tri = function (a, b, c, col, n) {
+  n = n || V3.norm(V3.cross(V3.sub(b, a), V3.sub(c, a)));
+  for (const p of [a, b, c]) this.d.push(p[0], p[1], p[2], n[0], n[1], n[2], col[0], col[1], col[2]);
+};
+Mesh.prototype.quad = function (a, b, c, d, col) { this.tri(a, b, c, col); this.tri(a, c, d, col); };
+Mesh.prototype.box = function (c, X, Y, Z, col) {   // X, Y, Z: half-extent vectors
+  const p = (i, j, k) => V3.add(V3.add(V3.add(c, V3.mul(X, i)), V3.mul(Y, j)), V3.mul(Z, k));
+  const f = [[[1, -1, -1], [1, 1, -1], [1, 1, 1], [1, -1, 1]], [[-1, -1, 1], [-1, 1, 1], [-1, 1, -1], [-1, -1, -1]],
+             [[-1, 1, -1], [-1, 1, 1], [1, 1, 1], [1, 1, -1]], [[-1, -1, 1], [-1, -1, -1], [1, -1, -1], [1, -1, 1]],
+             [[-1, -1, 1], [1, -1, 1], [1, 1, 1], [-1, 1, 1]], [[1, -1, -1], [-1, -1, -1], [-1, 1, -1], [1, 1, -1]]];
+  const flip = V3.dot(V3.cross(X, Y), Z) < 0;
+  for (const q of f) { const v = q.map(t => p(...t)); flip ? this.quad(v[3], v[2], v[1], v[0], col) : this.quad(v[0], v[1], v[2], v[3], col); }
+};
+Mesh.prototype.upload = function () {
+  const b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(this.d), gl.STATIC_DRAW);
+  return { b, n: this.d.length / 9 };
+};
+const hex = h => [parseInt(h.slice(1, 3), 16) / 255, parseInt(h.slice(3, 5), 16) / 255, parseInt(h.slice(5, 7), 16) / 255];
+const jit = (c, k) => { const f = 1 + (Math.random() * 2 - 1) * k; return [c[0] * f, c[1] * f, c[2] * f]; };
+
+/* turn the drawn line into a 3D track: x stays, height above the ground, loops drift sideways like real ones */
+const STEP3 = .5;
+function frames3D() {
+  const n = Math.floor(track.len / STEP3) + 1, P = [], Tn = [], U = [], B = [];
+  for (let i = 0; i < n; i++) {
+    const sI = Math.min(track.len, i * STEP3), p = sample(track, sI);
+    P.push([p.x, groundY - p.y, zAt(track, sI)]);
+    U.push([track.sigma * p.ty, track.sigma * p.tx, 0]);
+  }
+  for (let i = 0; i < n; i++) {
+    const t = V3.norm(V3.sub(P[Math.min(n - 1, i + 1)], P[Math.max(0, i - 1)]));
+    let u = U[i]; u = V3.norm(V3.sub(u, V3.mul(t, V3.dot(u, t))));
+    Tn.push(t); U[i] = u; B.push(V3.norm(V3.cross(t, u)));
+  }
+  return { n, P, T: Tn, U, B };
+}
+function build3D() {
+  const F = frames3D(), { n, P, T: Tn, U, B } = F;
+  const m = new Mesh(), rl = new Mesh(), sp = new Mesh();      // world, track, pillars (track and pillars can be hidden)
+  const RAIL = hex('#d6342c'), SPINE = hex('#9e2620'), TIE = hex('#6c7580'), STEEL = hex('#b3bdc7');
+  // rails and spine
+  const tube = (off, r, sides, col) => {
+    let prevRing = null;
+    for (let i = 0; i < n; i++) {
+      const c = V3.add(V3.add(P[i], V3.mul(B[i], off[0])), V3.mul(U[i], off[1])), ring = [];
+      for (let k = 0; k < sides; k++) { const a = k / sides * Math.PI * 2; ring.push(V3.add(c, V3.add(V3.mul(B[i], Math.cos(a) * r), V3.mul(U[i], Math.sin(a) * r)))); }
+      if (prevRing) for (let k = 0; k < sides; k++) { const k2 = (k + 1) % sides; rl.quad(prevRing[k], ring[k], ring[k2], prevRing[k2], col); }
+      prevRing = ring;
+    }
+  };
+  tube([.55, 0], .085, 6, RAIL); tube([-.55, 0], .085, 6, RAIL); tube([0, -.38], .15, 6, SPINE);
+  // ties
+  for (let i = 0; i < n; i += 2) rl.box(V3.sub(P[i], V3.mul(U[i], .16)), V3.mul(Tn[i], .08), V3.mul(U[i], .1), V3.mul(B[i], .64), TIE);
+  // supports
+  for (let i = 4; i < n - 4; i += 14) {
+    const p = V3.sub(P[i], V3.mul(U[i], .45));
+    if (U[i][1] < .55 || p[1] < 1.3) continue;
+    sp.box([p[0], p[1] / 2, p[2]], [.17, 0, 0], [0, p[1] / 2, 0], [0, 0, .17], STEEL);
+    sp.box([p[0], .15, p[2]], [.5, 0, 0], [0, .15, 0], [0, 0, .5], hex('#8d8a84'));
+  }
+  // station roof over the start, buffer at the end
+  {
+    const p = P[0], t = Tn[0], u = U[0], b = B[0];
+    m.box(V3.add(p, V3.add(V3.mul(u, 3.4), V3.mul(t, -.5))), V3.mul(t, 4), V3.mul(u, .14), V3.mul(b, 2.4), hex('#f2b632'));
+    for (const [dt, db] of [[-4, -2.2], [-4, 2.2], [3, -2.2], [3, 2.2]]) { const q = V3.add(p, V3.add(V3.mul(t, dt), V3.mul(b, db))); sp.box([q[0], q[1] / 2 + 1.7, q[2]], [.12, 0, 0], [0, q[1] / 2 + 1.7, 0], [0, 0, .12], hex('#2d3e4f')); }
+    const fl = V3.add(p, V3.add(V3.mul(b, 1.9), V3.mul(u, -.55)));
+    m.box(fl, V3.mul(t, 4), V3.mul(u, .1), V3.mul(b, .8), hex('#c9ced3'));
+    const e = P[n - 1], te = Tn[n - 1];
+    rl.box(V3.add(e, V3.mul(te, .6)), V3.mul(te, .25), V3.mul(U[n - 1], .5), V3.mul(B[n - 1], .8), hex('#ffcf3a'));
+  }
+  // bounds
+  let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+  for (const p of P) { x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]); z0 = Math.min(z0, p[2]); z1 = Math.max(z1, p[2]); }
+  const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2, R = Math.max(380, Math.max(x1 - x0, z1 - z0) / 2 + 260);
+  // ground with colour variation
+  const GN = 90, gs = 2 * R / GN, GRASS = hex('#74a65a'), gcol = [];
+  for (let j = 0; j <= GN; j++) for (let i = 0; i <= GN; i++) {
+    const x = cx - R + i * gs, z = cz - R + j * gs, v = .86 + .1 * Math.sin(x * .021 + Math.sin(z * .013) * 2) + .08 * Math.sin(z * .033 + x * .008) + Math.random() * .08;
+    gcol.push([GRASS[0] * v, GRASS[1] * (v * .96 + .04), GRASS[2] * v]);
+  }
+  for (let j = 0; j < GN; j++) for (let i = 0; i < GN; i++) {
+    const x = cx - R + i * gs, z = cz - R + j * gs, k = j * (GN + 1) + i;
+    const a = [x, 0, z], b = [x, 0, z + gs], c = [x + gs, 0, z + gs], d = [x + gs, 0, z];
+    const ca = gcol[k], cb = gcol[k + GN + 1], cc = gcol[k + GN + 2], cd = gcol[k + 1], up = [0, 1, 0];
+    for (const [p, col] of [[a, ca], [b, cb], [c, cc], [a, ca], [c, cc], [d, cd]]) m.d.push(p[0], p[1], p[2], 0, 1, 0, col[0], col[1], col[2]);
+  }
+  // a gravel path under the track
+  const PATH = hex('#c9b48a');
+  for (let i = 0; i < n - 2; i += 2) {
+    const a = P[i], b = P[i + 2], dx = b[0] - a[0], dz = b[2] - a[2], l = Math.hypot(dx, dz);
+    if (l < .05) continue;
+    const sx = -dz / l * 1.6, sz = dx / l * 1.6, y = .04 + (i % 4) * .002;
+    m.quad([a[0] + sx, y, a[2] + sz], [b[0] + sx, y, b[2] + sz], [b[0] - sx, y, b[2] - sz], [a[0] - sx, y, a[2] - sz], jit(PATH, .05));
+  }
+  // trees, kept away from the track
+  const near = (x, z) => { for (let i = 0; i < n; i += 4) { const p = P[i]; if ((p[0] - x) ** 2 + (p[2] - z) ** 2 < 49) return true; } return false; };
+  let placed = 0;
+  for (let tries = 0; placed < 300 && tries < 3000; tries++) {
+    const ang = Math.random() * Math.PI * 2, rr = Math.sqrt(Math.random()) * R * .92, x = cx + Math.cos(ang) * rr, z = cz + Math.sin(ang) * rr;
+    if (near(x, z)) continue;
+    placed++;
+    const h = 4 + Math.random() * 5, r = 1.5 + Math.random() * 1.4, col = jit(hex(Math.random() < .5 ? '#3f7d3a' : '#4f8f45'), .12);
+    m.box([x, .9, z], [.22, 0, 0], [0, .9, 0], [0, 0, .22], hex('#6b4a33'));
+    const tip = [x, 1.6 + h, z], S = 7;
+    for (let k = 0; k < S; k++) {
+      const a1 = k / S * Math.PI * 2, a2 = (k + 1) / S * Math.PI * 2;
+      const p1 = [x + Math.cos(a1) * r, 1.4, z + Math.sin(a1) * r], p2 = [x + Math.cos(a2) * r, 1.4, z + Math.sin(a2) * r];
+      m.tri(p1, tip, p2, k % 2 ? col : V3.mul(col, .9));
+    }
+  }
+  // far hills on the horizon
+  const MR = R * 2.1, MS = 72, hs = [];
+  for (let k = 0; k < MS; k++) hs.push(40 + 50 * Math.abs(Math.sin(k * .37)) + 40 * Math.random());
+  for (let k = 0; k < MS; k++) {
+    const a1 = k / MS * Math.PI * 2, a2 = (k + 1) / MS * Math.PI * 2, h1 = hs[k], h2 = hs[(k + 1) % MS];
+    const b1 = [cx + Math.cos(a1) * MR, -2, cz + Math.sin(a1) * MR], b2 = [cx + Math.cos(a2) * MR, -2, cz + Math.sin(a2) * MR];
+    const t1 = [b1[0], h1, b1[2]], t2 = [b2[0], h2, b2[2]], col = hex('#7f9fb6');
+    m.quad(b1, b2, t2, t1, col);
+  }
+  // the front car you sit in (local frame: x forward, y up, z side)
+  const car = new Mesh(), Y = hex('#ffcf3a'), D = hex('#2d3e4f');
+  car.box([0, .38, 0], [1.05, 0, 0], [0, .28, 0], [0, 0, .68], Y);                    // body
+  car.box([1.22, .3, 0], [.2, 0, 0], [0, .2, 0], [0, 0, .58], V3.mul(Y, .9));         // nose
+  car.box([1.36, .36, .38], [.04, 0, 0], [0, .07, 0], [0, 0, .1], hex('#fff6d0'));    // headlights
+  car.box([1.36, .36, -.38], [.04, 0, 0], [0, .07, 0], [0, 0, .1], hex('#fff6d0'));
+  car.box([0, .7, .66], [1.05, 0, 0], [0, .06, 0], [0, 0, .04], V3.mul(Y, .78));      // side rims
+  car.box([0, .7, -.66], [1.05, 0, 0], [0, .06, 0], [0, 0, .04], V3.mul(Y, .78));
+  car.box([.62, .92, 0], [.035, 0, 0], [0, .035, 0], [0, 0, .42], hex('#4a5560'));    // lap bar
+  car.box([.62, .8, .4], [.03, 0, 0], [0, .12, 0], [0, 0, .03], hex('#4a5560'));
+  car.box([.62, .8, -.4], [.03, 0, 0], [0, .12, 0], [0, 0, .03], hex('#4a5560'));
+  scene3d = { track, F, world: m.upload(), rails: rl.upload(), posts: sp.upload(), car: car.upload() };
+}
+function camAt(s) {
+  const F = scene3d.F, f = Math.max(0, Math.min(F.n - 1.001, s / STEP3)), i = Math.floor(f), u = f - i, j = Math.min(F.n - 1, i + 1);
+  return { P: V3.lerp(F.P[i], F.P[j], u), T: V3.norm(V3.lerp(F.T[i], F.T[j], u)), U: V3.norm(V3.lerp(F.U[i], F.U[j], u)), B: V3.norm(V3.lerp(F.B[i], F.B[j], u)) };
+}
+function drawMesh(mesh, M) {
+  const a = g3.a;
+  gl.bindBuffer(gl.ARRAY_BUFFER, mesh.b);
+  gl.enableVertexAttribArray(a.P); gl.vertexAttribPointer(a.P, 3, gl.FLOAT, false, 36, 0);
+  gl.enableVertexAttribArray(a.N); gl.vertexAttribPointer(a.N, 3, gl.FLOAT, false, 36, 12);
+  gl.enableVertexAttribArray(a.C); gl.vertexAttribPointer(a.C, 3, gl.FLOAT, false, 36, 24);
+  gl.uniformMatrix4fv(g3.u.M, false, M);
+  gl.drawArrays(gl.TRIANGLES, 0, mesh.n);
+}
+function render3D() {
+  if (!scene3d || scene3d.track !== track) build3D();
+  const dpr = Math.min(window.devicePixelRatio || 1, 1.75), w = Math.round(innerWidth * dpr), h = Math.round(innerHeight * dpr);
+  if (glc.width !== w || glc.height !== h) { glc.width = w; glc.height = h; }
+  gl.viewport(0, 0, w, h);
+  const s = ride ? ride.s : 0, c = camAt(s), ahead = camAt(Math.min(track.len, s + 2));
+  const v = ride ? ride.v : 0, shake = v > 14 ? Math.min(.035, (v - 14) * .0016) : 0, tt = performance.now() / 1000;
+  const q = ride && mode === 'ride' ? Math.max(0, Math.min(1, (ride.held - .2) / 1.7)) : 1, k = 1 - q * q * (3 - 2 * q);
+  const eye = V3.add(V3.add(V3.add(c.P, V3.mul(c.U, 1.55 + 1.1 * k + Math.sin(tt * 37) * shake)), V3.mul(c.T, -.35 - 3 * k)), V3.mul(c.B, .8 * k + Math.sin(tt * 29) * shake));
+  let dir = V3.norm(V3.add(V3.mul(c.T, .78), V3.mul(V3.norm(V3.sub(V3.add(ahead.P, V3.mul(ahead.U, 1.4)), eye)), .22)));
+  if (k > 0) dir = V3.norm(V3.add(V3.mul(dir, 1 - k), V3.mul(V3.norm(V3.sub(V3.add(c.P, V3.add(V3.mul(c.T, 10), V3.mul(c.U, .3))), eye)), k)));
+  const asp = w / h, fy = Math.min(1.42, Math.max(1.1, 2 * Math.atan(Math.tan(1.62 / 2) / asp)));
+  const VP = M4.mul(M4.persp(fy, asp, .1, 4000), M4.look(eye, V3.add(eye, dir), c.U));
+  gl.clearColor(FOG[0], FOG[1], FOG[2], 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  // sky
+  gl.disable(gl.DEPTH_TEST); gl.useProgram(g3.sky);
+  gl.bindBuffer(gl.ARRAY_BUFFER, g3.qb); gl.enableVertexAttribArray(g3.a.Q); gl.vertexAttribPointer(g3.a.Q, 2, gl.FLOAT, false, 0, 0);
+  gl.uniformMatrix4fv(g3.u.I, false, M4.inv(VP)); gl.uniform3fv(g3.u.sE, eye); gl.uniform3fv(g3.u.sS, SUN); gl.uniform3fv(g3.u.sF, FOG); gl.uniform3fv(g3.u.sZ, ZEN);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.disableVertexAttribArray(g3.a.Q);
+  // world + the car you sit in
+  gl.enable(gl.DEPTH_TEST); gl.enable(gl.CULL_FACE); gl.cullFace(gl.BACK);
+  gl.useProgram(g3.prog);
+  gl.uniformMatrix4fv(g3.u.VP, false, VP); gl.uniform3fv(g3.u.E, eye); gl.uniform3fv(g3.u.S, SUN); gl.uniform3fv(g3.u.F, FOG);
+  gl.disable(gl.CULL_FACE);
+  drawMesh(scene3d.world, ID4);
+  if (showRails) drawMesh(scene3d.rails, ID4);
+  if (showPosts) drawMesh(scene3d.posts, ID4);
+  drawMesh(scene3d.car, M4.basis(c.T, c.U, c.B, c.P));
+}
+function setView3d(on) {
+  if (on && !init3D()) { if (!setView3d.warned) { toast(L.no3d); setView3d.warned = true; } on = false; }
+  view3d = on;
+  document.body.classList.toggle('pov3d', on);
+}
+
+/* ---------- mini map: the course from the side, and where you are on it right now ---------- */
+const MKEY = 'rakugaki-coaster:map', mini = $('#mini'), mctx = mini.getContext('2d');
+let mapOn = (() => { try { return localStorage.getItem(MKEY) !== 'off'; } catch (e) { return true; } })(), miniCache = null;
+function setMap(on) {
+  mapOn = on;
+  document.body.classList.toggle('mapOff', !on);
+  const b = $('#mapBtn'); b.setAttribute('aria-pressed', on ? 'true' : 'false'); b.title = on ? L.mapOn : L.mapOff;
+  try { localStorage.setItem(MKEY, on ? 'on' : 'off'); } catch (e) {}
+}
+function miniLayer() {
+  const t = track, dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const maxW = Math.round(Math.min(210, Math.max(120, W * .4))), maxH = Math.round(Math.min(150, Math.max(90, H * .19)));
+  const c0 = miniCache;
+  if (c0 && c0.t === t && c0.maxW === maxW && c0.maxH === maxH && c0.dpr === dpr) return c0;
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (let i = 0; i < t.n; i += 2) { x0 = Math.min(x0, t.xs[i]); x1 = Math.max(x1, t.xs[i]); y0 = Math.min(y0, t.ys[i]); y1 = Math.max(y1, t.ys[i]); }
+  const bottom = Math.min(groundY, y1 + Math.max(3, (y1 - y0) * .3)), pad = 11;
+  const sc = Math.min((maxW - 2 * pad) / Math.max(1, x1 - x0), (maxH - 2 * pad) / Math.max(1, bottom - y0));
+  const cw = Math.max(64, Math.round((x1 - x0) * sc + 2 * pad)), ch = Math.max(48, Math.round((bottom - y0) * sc + 2 * pad));
+  const ox = (cw - (x1 - x0) * sc) / 2 - x0 * sc, oy = pad - y0 * sc + (ch - 2 * pad - (bottom - y0) * sc) / 2;
+  const img = document.createElement('canvas'); img.width = cw * dpr; img.height = ch * dpr;
+  const g = img.getContext('2d'); g.scale(dpr, dpr);
+  const P = i => [ox + t.xs[i] * sc, oy + t.ys[i] * sc];
+  if (groundY <= bottom + .01) { g.fillStyle = 'rgba(79,154,69,.35)'; g.fillRect(0, oy + groundY * sc, cw, ch); }
+  // the track, back to front, so crossings read the same way as on the big view
+  const chunks = [];
+  for (let a = 0; a < t.n - 1; a += 8) { const b = Math.min(t.n - 1, a + 8); chunks.push({ a, b, z: (t.zs[a] + t.zs[b]) / 2 }); }
+  chunks.sort((p, q) => p.z - q.z);
+  g.lineJoin = 'round';
+  for (const k of chunks) {
+    for (const [col, w, cap] of [['rgba(255,255,255,.95)', 4.6, 'butt'], ['#d6342c', 2.2, 'round']]) {
+      g.strokeStyle = col; g.lineWidth = w; g.lineCap = cap; g.beginPath();
+      for (let i = k.a; i <= k.b; i++) { const [x, y] = P(i); i > k.a ? g.lineTo(x, y) : g.moveTo(x, y); }
+      g.stroke();
+    }
+  }
+  // station and finish flag
+  const [sx, sy] = P(0); g.fillStyle = '#2d3e4f'; g.fillRect(sx - 4, sy - 7, 8, 2.5);
+  const [ex, ey] = P(t.n - 1); g.fillRect(ex - .6, ey - 9, 1.2, 9);
+  for (let r = 0; r < 2; r++) for (let q = 0; q < 3; q++) { g.fillStyle = (r + q) % 2 ? '#fff' : '#14202b'; g.fillRect(ex + .6 + q * 2, ey - 9 + r * 2, 2, 2); }
+  mini.width = cw * dpr; mini.height = ch * dpr; mini.style.width = cw + 'px'; mini.style.height = ch + 'px';
+  return (miniCache = { t, maxW, maxH, dpr, sc, ox, oy, cw, ch, img });
+}
+function drawMini() {
+  if (!view3d || !mapOn || !track) return;
+  const M = miniLayer(), g = mctx;
+  g.setTransform(M.dpr, 0, 0, M.dpr, 0, 0);
+  g.clearRect(0, 0, M.cw, M.ch);
+  g.drawImage(M.img, 0, 0, M.cw, M.ch);
+  if (!ride) return;
+  const p = sample(track, Math.max(0, Math.min(track.len, ride.s))), x = M.ox + p.x * M.sc, y = M.oy + p.y * M.sc;
+  const pulse = (Math.sin(performance.now() / 160) + 1) / 2;
+  g.fillStyle = `rgba(255,190,40,${(.45 - pulse * .3).toFixed(2)})`; g.beginPath(); g.arc(x, y, 6 + pulse * 5, 0, 7); g.fill();
+  g.fillStyle = '#ffc93c'; g.strokeStyle = '#14202b'; g.lineWidth = 1.6;
+  g.beginPath(); g.arc(x, y, 4.6, 0, 7); g.fill(); g.stroke();
+}
+setMap(mapOn);
+// show / hide the track and the pillars in 3D (each remembered on its own)
+const loadFlag = k => { try { return localStorage.getItem('rakugaki-coaster:' + k) !== 'off'; } catch (e) { return true; } };
+let showRails = loadFlag('rails'), showPosts = loadFlag('posts');
+function setShow(which, on) {
+  if (which === 'rails') showRails = on; else showPosts = on;
+  document.body.classList.toggle(which + 'Off', !on);
+  $(which === 'rails' ? '#railBtn' : '#postBtn').setAttribute('aria-pressed', on ? 'true' : 'false');
+  try { localStorage.setItem('rakugaki-coaster:' + which, on ? 'on' : 'off'); } catch (e) {}
+}
+setShow('rails', showRails); setShow('posts', showPosts);
+
+/* ---------- save image ---------- */
+function saveImage() {
+  const w = 1200, h = 630, c = document.createElement('canvas'); c.width = w; c.height = h;
+  const g = c.getContext('2d');
+  const sky = g.createLinearGradient(0, 0, 0, h); sky.addColorStop(0, '#7cc3ee'); sky.addColorStop(1, '#eaf6fb');
+  g.fillStyle = sky; g.fillRect(0, 0, w, h);
+  let minX = Infinity, maxX = -Infinity, minY = Infinity;
+  for (const p of ctrl) { minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x); minY = Math.min(minY, p.y); }
+  const area = { x: 60, y: 130, w: 1080, h: 420 }, gy0 = Math.max(groundY, minY + 5);
+  const sc = Math.min(area.w / (maxX - minX + 8), area.h / (gy0 - minY + 6));
+  const ox = area.x + area.w / 2 - sc * (minX + maxX) / 2, oy = area.y + area.h - sc * gy0;
+  g.fillStyle = '#6fbb5f'; g.fillRect(0, oy + sc * gy0, w, h);
+  g.strokeStyle = 'rgba(110,125,138,.75)'; g.lineWidth = Math.max(1, .18 * sc); g.beginPath();
+  for (let i = 0; i < track.n; i += 16) { const x = ox + track.xs[i] * sc, y = oy + track.ys[i] * sc; g.moveTo(x, y); g.lineTo(x, oy + sc * gy0); }
+  g.stroke();
+  g.strokeStyle = '#d6342c'; g.lineWidth = Math.max(3, .5 * sc); g.lineJoin = g.lineCap = 'round'; g.beginPath();
+  for (let i = 0; i < track.n; i++) { const x = ox + track.xs[i] * sc, y = oy + track.ys[i] * sc; i ? g.lineTo(x, y) : g.moveTo(x, y); }
+  g.stroke();
+  const font = getComputedStyle(document.body).fontFamily;
+  g.fillStyle = '#14202b'; g.font = `900 46px ${font}`; g.fillText(L.brand, 60, 86);
+  g.fillStyle = 'rgba(20,32,43,.6)'; g.font = `700 22px ${font}`; g.fillText(L.sub, 62, 120);
+  if (ride) {
+    g.textAlign = 'right'; g.fillStyle = 'rgba(20,32,43,.72)'; g.font = `800 21px ${font}`;
+    g.fillText(`${L.maxSpeed} ${Math.round(ride.vmax * 3.6).toLocaleString('zh-CN')} km/h   ·   ${L.maxG} ${fmtG(ride.gAbsMax)} G`, w - 60, 86);
+    if (ride.launchA > 0) { g.fillStyle = 'rgba(214,52,44,.85)'; g.fillText(`${L.launch} ${Math.round(ride.launchV * 3.6).toLocaleString('zh-CN')} km/h`, w - 60, 116); }
+    g.textAlign = 'left';
+  }
+  const a = document.createElement('a'); a.href = c.toDataURL('image/png'); a.download = 'doodle-coaster-cn.png'; document.body.appendChild(a); a.click(); a.remove();
+}
+
+/* ================= 电磁弹射 · 仪表 · 轨道工坊 · 编辑器 ================= */
+
+const PKEY = 'doodle-coaster-cn:';
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(PKEY + k); return v === null ? d : v; } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem(PKEY + k, String(v)); } catch (e) {} },
+};
+// G 值跨度可以从 1 一直窜到几万，所以显示按量级切换单位，刻度条走对数。
+const fmtG = v => {
+  const a = Math.abs(v);
+  return a >= 1000 ? (v / 1000).toFixed(2) + 'k' : a >= 100 ? v.toFixed(0) : a >= 10 ? v.toFixed(1) : v.toFixed(2);
+};
+const gLog = v => Math.min(1, Math.log10(Math.max(1, Math.abs(v))) / 5);
+
+/* ---------- 弹射参数（滑杆走对数，否则 100–1000 会被挤成一小条） ---------- */
+const LAUNCH_MIN = 100, LAUNCH_MAX = 10000, LAUNCH_DEF = 400, LAUNCH_PRESETS = [300, 1000, 3000, 10000];
+const posToKmh = p => Math.max(LAUNCH_MIN, Math.min(LAUNCH_MAX, Math.round(LAUNCH_MIN * Math.pow(LAUNCH_MAX / LAUNCH_MIN, p / 1000) / 10) * 10));
+const kmhToPos = v => Math.round(1000 * Math.log(Math.max(LAUNCH_MIN, Math.min(LAUNCH_MAX, v)) / LAUNCH_MIN) / Math.log(LAUNCH_MAX / LAUNCH_MIN));
+let launchKmh = Math.max(LAUNCH_MIN, Math.min(LAUNCH_MAX, +store.get('launch', LAUNCH_DEF) || LAUNCH_DEF));
+let noLaunch = store.get('noLaunch', '0') === '1';
+let arcadeDrag = store.get('arcade', '1') === '1';
+function syncLaunchUI() {
+  $('#launchRange').value = noLaunch ? 0 : kmhToPos(launchKmh);
+  $('#noLaunch').checked = noLaunch;
+  $('#lVal').textContent = noLaunch ? L.gravityStart : launchKmh.toLocaleString('zh-CN') + ' km/h';
+  $('#launchRow').classList.toggle('off', noLaunch);
+  $('#bGo').textContent = noLaunch ? L.start : L.launch;
+  $('#lPresets').querySelectorAll('button').forEach(b => b.classList.toggle('on', !noLaunch && +b.dataset.v === launchKmh));
+}
+function applyArcade() {
+  setArcade(arcadeDrag);
+  $('#realDrag').checked = !arcadeDrag;
+  $('#rdLab').textContent = arcadeDrag ? L.arcadeDrag : L.realDrag;
+}
+
+/* ---------- 慢动作：只缩放积分步长，仪表上的数字始终是真实值 ---------- */
+const SLOW_STEPS = [1, 10, 50];
+let slowIdx = 0;
+const slowFactor = () => SLOW_STEPS[slowIdx];
+function setSlowIdx(i) {
+  slowIdx = Math.max(0, Math.min(SLOW_STEPS.length - 1, i));
+  $('#gSlowIcon').textContent = slowIdx === 0 ? '▶' : '1/' + SLOW_STEPS[slowIdx];
+  document.body.classList.toggle('slowmo', slowIdx > 0);
+}
+function autoSlow(kmh) {
+  setSlowIdx(kmh > 2000 ? 2 : kmh > 800 ? 1 : 0);
+  if (slowIdx > 0) toast(L.slowHint);
+}
+
+/* ---------- 仪表 ---------- */
+const gauge = { s: null, g: null, fill: null, peak: null };
+function updateGauge() {
+  const r = ride;
+  const kmh = Math.round(r.v * 3.6);
+  if (kmh !== gauge.s) { gauge.s = kmh; $('#gSpeed').textContent = kmh.toLocaleString('zh-CN'); }
+  const gs = fmtG(r.g);
+  if (gs !== gauge.g) { gauge.g = gs; $('#gG').textContent = gs; $('#gG').style.color = r.g < 0 ? '#8fd6ff' : ''; }
+  const fill = (gLog(r.g) * 100).toFixed(1) + '%';
+  if (fill !== gauge.fill) { gauge.fill = fill; $('#gFill').style.width = fill; }
+  const peak = (gLog(r.gAbsMax) * 100).toFixed(1) + '%';
+  if (peak !== gauge.peak) { gauge.peak = peak; $('#gPeak').style.left = peak; }
+  document.body.classList.toggle('hyperspeed', r.v > 90);
+}
+
+/* ---------- 弹射音效 + 闪光 ---------- */
+function launchSound(v) {
+  if (!AC) return;
+  const t0 = AC.currentTime, dur = Math.min(1.8, Math.max(.4, v / 800));
+  const o = AC.createOscillator(), g = AC.createGain(), f = AC.createBiquadFilter();
+  o.type = 'sawtooth';
+  o.frequency.setValueAtTime(60, t0);
+  o.frequency.exponentialRampToValueAtTime(60 + Math.min(2800, 40 + v * 1.5), t0 + dur);
+  f.type = 'lowpass';
+  f.frequency.setValueAtTime(500, t0);
+  f.frequency.exponentialRampToValueAtTime(5200, t0 + dur);
+  g.gain.setValueAtTime(.0001, t0);
+  g.gain.exponentialRampToValueAtTime(.2, t0 + dur * .85);
+  g.gain.exponentialRampToValueAtTime(.0001, t0 + dur + .25);
+  o.connect(f); f.connect(g); g.connect(AC.destination); o.start(t0); o.stop(t0 + dur + .3);
+  const len = Math.floor(AC.sampleRate * dur), buf = AC.createBuffer(1, len, AC.sampleRate), d = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(i / len, 3) * .45;
+  const src = AC.createBufferSource(); src.buffer = buf;
+  const hp = AC.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 2200;
+  const hg = AC.createGain(); hg.gain.value = .09;
+  src.connect(hp); hp.connect(hg); hg.connect(AC.destination); src.start(t0);
+}
+function launchFx(kmh) {
+  const f = $('#flash');
+  f.classList.remove('go'); void f.offsetWidth; f.classList.add('go');
+  launchSound(kmh / 3.6);
+  toast(L.launchToast.replace('{v}', kmh.toLocaleString('zh-CN') + ' km/h'));
+}
+// 站台放行的音效留在页面这一侧；装了弹射就改成 LSM 的啸叫。
+onRelease(r => {
+  if (r !== ride || mode !== 'ride') return;
+  if (r.launching) launchFx(Math.round(r.launchV * 3.6)); else release();
+});
+
+/* ---------- 缓存失效 + 统一的轨道装载（工坊/编辑器/分享） ---------- */
+const TA = window.OLC_TRACKS_API || {
+  validate: () => ({ ok: false, errors: [{ msg: '轨道模块 tracks.js 没有加载成功，工坊暂时不可用。' }], warnings: [], norm: null }),
+};
+let builtinDefs = (window.OLC_TRACKS || []).slice(), sessionDefs = [], currentDef = null, lastVerdict = null;
+function invalidateTrack() { railCache = null; layer = null; miniCache = null; scene3d = null; }
+function useCtrl(points, ground) {
+  ctrl = points.map(p => ({ x: p.x, y: p.y }));
+  groundY = ground;
+  track = buildTrack(ctrl); buildExt(track); buildDepth(track); invalidateTrack();
+  fitted = true; fitView(); baseView = Object.assign({}, view); buildBackdrop();
+}
+function loadDef(def, shared) {
+  const v = TA.validate(def);
+  lastVerdict = v;
+  if (!v.ok) return v;
+  useCtrl(v.norm.ctrl, v.norm.ground);
+  currentDef = v.norm;
+  code = encode(ctrl, groundY); codeKey = 't';
+  if (v.norm.launch) { launchKmh = v.norm.launch; noLaunch = false; store.set('launch', launchKmh); store.set('noLaunch', 0); syncLaunchUI(); }
+  if (!shared) enterReady();
+  return v;
+}
+function exportDef() {
+  if (!ctrl || ctrl.length < 2) return null;
+  return {
+    id: (currentDef && currentDef.id) || 'my-track',
+    name: (currentDef && currentDef.name) || '我的轨道',
+    ground: +groundY.toFixed(2),
+    launch: noLaunch ? 0 : launchKmh,
+    points: ctrl.map(p => [+p.x.toFixed(2), +(groundY - p.y).toFixed(2)]),
+  };
+}
+function b64uEncode(str) {
+  const b = new TextEncoder().encode(str); let s = '';
+  for (let i = 0; i < b.length; i++) s += String.fromCharCode(b[i]);
+  return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+function b64uDecode(s) {
+  const b = atob(s.replace(/-/g, '+').replace(/_/g, '/'));
+  return new TextDecoder().decode(Uint8Array.from(b, ch => ch.charCodeAt(0)));
+}
+// 手绘轨道的控制点间距是 1 m，能塞进原作的紧凑字节编码（#t=，与原站兼容）；
+// 自己设计的轨道点距大得多，改用 JSON 分享（#j=）。
+function shareHash() {
+  const d = exportDef();
+  if (d) {
+    let gap = 0;
+    for (let i = 1; i < d.points.length; i++) gap = Math.max(gap, Math.hypot(d.points[i][0] - d.points[i - 1][0], d.points[i][1] - d.points[i - 1][1]));
+    if (currentDef || gap > 1.1) return 'j=' + b64uEncode(JSON.stringify(d));
+  }
+  return codeKey + '=' + code;
+}
+
+/* ---------- 轨道工坊 ---------- */
+function openWorkshop(tab) { $('#workshop').hidden = false; setTab(tab || 'list'); renderTrackList(); }
+function closeWorkshop() { $('#workshop').hidden = true; }
+function setTab(name) {
+  $('#wTabs').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.pane === name));
+  $('#workshop').querySelectorAll('.pane').forEach(p => p.classList.toggle('on', p.dataset.pane === name));
+  if (name === 'json' && !$('#jsonBox').value.trim()) { const d = exportDef(); $('#jsonBox').value = JSON.stringify(d || { id: 'my-track', name: '我的轨道', ground: 70, launch: 300, points: [[0, 0], [40, 34], [80, 10], [120, 0]] }, null, 1); }
+  if (name === 'edit') updateEditStats();
+}
+function showVerdict(v) {
+  const el = $('#vMsg');
+  if (!v) { el.className = 'vmsg'; el.textContent = ''; return; }
+  if (v.ok) {
+    el.className = 'vmsg on ok';
+    el.textContent = L.validateOk + ' — ' + v.norm.name + ' · ' + L.totalLen + ' ' + v.norm.stats.length + ' m · ' + L.points + ' ' + v.norm.stats.points + ' · ' + L.peak + ' ' + v.norm.stats.peak + ' m'
+      + (v.warnings.length ? '\n' + v.warnings.map(w => '· ' + w.msg).join('\n') : '');
+  } else {
+    el.className = 'vmsg on err';
+    el.textContent = L.validateFail + '\n' + v.errors.map(e => '· ' + e.msg).join('\n');
+  }
+}
+function defMeta(v) {
+  if (!v.ok) return L.validateFail;
+  const p = [L.totalLen + ' ' + v.norm.stats.length + ' m', L.peak + ' ' + v.norm.stats.peak + ' m', L.points + ' ' + v.norm.stats.points];
+  if (v.norm.launch) p.push(L.launchLabel + ' ' + v.norm.launch + ' km/h');
+  return p.join(' · ');
+}
+function renderTrackList() {
+  const host = $('#trackList');
+  host.innerHTML = '';
+  const rows = builtinDefs.map(d => ({ def: d, builtin: true })).concat(sessionDefs.map(d => ({ def: d, builtin: false })));
+  if (!rows.length) { host.innerHTML = '<p class="hintline">' + L.noTracks + '</p>'; return; }
+  for (const row of rows) {
+    const v = TA.validate(row.def);
+    const el = document.createElement('div');
+    el.className = 'titem';
+    const tt = document.createElement('div');
+    tt.className = 'tt';
+    const n = document.createElement('div'); n.className = 'tn'; n.textContent = row.def.name || row.def.id || '未命名';
+    const m = document.createElement('div'); m.className = 'tm'; m.textContent = defMeta(v);
+    tt.appendChild(n); tt.appendChild(m);
+    const bRide = document.createElement('button'); bRide.type = 'button'; bRide.textContent = L.rideIt;
+    bRide.onclick = () => rideDef(row.def);
+    const bEdit = document.createElement('button'); bEdit.type = 'button'; bEdit.className = 'ghost'; bEdit.textContent = L.editIt;
+    bEdit.onclick = () => startEditFromDef(row.def);
+    el.appendChild(tt); el.appendChild(bRide); el.appendChild(bEdit);
+    if (!row.builtin) {
+      const bDel = document.createElement('button'); bDel.type = 'button'; bDel.className = 'ghost'; bDel.textContent = L.delIt;
+      bDel.onclick = () => { sessionDefs = sessionDefs.filter(x => x !== row.def); renderTrackList(); };
+      el.appendChild(bDel);
+    }
+    host.appendChild(el);
+  }
+}
+function rideDef(def) {
+  const v = loadDef(def);
+  if (!v.ok) { showVerdict(v); setTab('json'); $('#jsonBox').value = JSON.stringify(def, null, 1); return; }
+  showVerdict(v); closeWorkshop();
+  if (mode === 'ready' && track) { audioInit(); startRide(); }
+}
+function startEditFromDef(def) { showVerdict(TA.validate(def)); enterEdit(def); }
+
+/* ---------- 可视化编辑器 ---------- */
+let editing = false, editPts = [], editGround = 70, editSel = -1, editPid = null, editDrag = false, editDirty = false, editUndo = [], lastTapI = -1, lastTapT = 0, editSnapshot = null;
+function rebuildEdit(deep) {
+  ctrl = editPts.map(p => ({ x: p.x, y: p.y }));
+  groundY = editGround;
+  track = buildTrack(ctrl); buildExt(track);
+  if (deep) { buildDepth(track); invalidateTrack(); prepare3D(); }
+  else railCache = null;
+}
+function updateEditInfo() {
+  let len = 0, peak = -Infinity;
+  for (let i = 1; i < editPts.length; i++) len += Math.hypot(editPts[i].x - editPts[i - 1].x, editPts[i].y - editPts[i - 1].y);
+  for (const p of editPts) peak = Math.max(peak, editGround - p.y);
+  $('#editInfo').textContent = L.totalLen + ' ' + len.toFixed(0) + ' m · ' + L.points + ' ' + editPts.length + ' · ' + L.peak + ' ' + peak.toFixed(1) + ' m';
+}
+function updateEditStats() {
+  const d = exportDef();
+  if (!d) { $('#wStats').textContent = ''; return; }
+  const v = TA.validate(d);
+  $('#wStats').textContent = v.ok ? (L.totalLen + ' ' + v.norm.stats.length + ' m · ' + L.peak + ' ' + v.norm.stats.peak + ' m · ' + L.points + ' ' + v.norm.stats.points) : L.validateFail;
+}
+function enterEdit(def) {
+  let pts = null, g = 70;
+  if (def && Array.isArray(def.points)) { g = +def.ground || 70; pts = def.points.map(p => ({ x: +p[0], y: g - +p[1] })); }
+  else if (ctrl && ctrl.length >= 3) { pts = ctrl.map(p => ({ x: p.x, y: p.y })); g = groundY; }
+  if (!pts || pts.length < 3) { toast(L.needPoints); return; }
+  editing = true; editPts = pts; editGround = g; editUndo = []; editSel = -1; editPid = null; editDrag = false; editDirty = false;
+  editSnapshot = { ctrl: ctrl ? ctrl.map(p => ({ x: p.x, y: p.y })) : null, ground: groundY, def: currentDef };
+  closeWorkshop();
+  mode = 'edit'; ride = null; setView3d(false);
+  document.body.classList.add('editing');
+  document.body.classList.remove('riding', 'ready', 'hasTrack');
+  $('#hint').classList.add('off');
+  $('#result').hidden = true; $('#sharedOv').hidden = true;
+  rebuildEdit(true);
+  fitted = true; fitView(); baseView = Object.assign({}, view); buildBackdrop();
+  updateEditInfo();
+}
+function exitEdit(apply) {
+  editing = false; editPid = null; editDrag = false; editDirty = false;
+  document.body.classList.remove('editing');
+  if (apply && editPts.length >= 3) {
+    useCtrl(editPts, editGround);
+    currentDef = null;                       // 编辑结果按手绘轨道对待，分享走 JSON（见 shareHash）
+    code = encode(ctrl, groundY); codeKey = 't';
+    enterReady();
+  } else if (editSnapshot && editSnapshot.ctrl) {
+    useCtrl(editSnapshot.ctrl, editSnapshot.ground);   // 取消 = 完整还原进编辑前的状态
+    currentDef = editSnapshot.def;
+    code = encode(ctrl, groundY); codeKey = 't';
+    enterReady();
+  } else resetDraw();
+  editSnapshot = null;
+}
+function pushUndo() { editUndo.push(editPts.map(p => ({ x: p.x, y: p.y }))); if (editUndo.length > 80) editUndo.shift(); }
+function hitHandle(w) {
+  let best = -1, bd = Infinity;
+  editPts.forEach((p, i) => { const d = Math.hypot(p.x - w.x, p.y - w.y) * view.s; if (d < 26 && d < bd) { bd = d; best = i; } });
+  return best;
+}
+function nearestInsert(w) {
+  let best = 1, bd = Infinity;
+  for (let i = 0; i < editPts.length - 1; i++) {
+    const a = editPts[i], b = editPts[i + 1];
+    const dx = b.x - a.x, dy = b.y - a.y, L2 = dx * dx + dy * dy || 1e-9;
+    const t = Math.max(0, Math.min(1, ((w.x - a.x) * dx + (w.y - a.y) * dy) / L2));
+    const d = Math.hypot(w.x - (a.x + dx * t), w.y - (a.y + dy * t));
+    if (d < bd) { bd = d; best = i + 1; }
+  }
+  return best;
+}
+function deleteHandle(i) {
+  if (editPts.length <= 3) { toast(L.needPoints); return; }
+  pushUndo(); editPts.splice(i, 1); editSel = -1; rebuildEdit(true); updateEditInfo();
+}
+function drawEditHandles() {
+  if (!editing) return;
+  ctx.save();
+  ctx.setLineDash([6, 5]); ctx.lineWidth = 1.5; ctx.strokeStyle = 'rgba(20,32,43,.35)';
+  ctx.beginPath();
+  editPts.forEach((p, i) => { const xy = toScreen(p.x, p.y); i ? ctx.lineTo(xy[0], xy[1]) : ctx.moveTo(xy[0], xy[1]); });
+  ctx.stroke(); ctx.setLineDash([]);
+  ctx.font = '800 10px ' + getComputedStyle(document.body).fontFamily;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  editPts.forEach((p, i) => {
+    const xy = toScreen(p.x, p.y), sel = i === editSel;
+    ctx.beginPath(); ctx.arc(xy[0], xy[1], sel ? 12 : 9, 0, 7);
+    ctx.fillStyle = sel ? '#d6342c' : '#fff'; ctx.fill();
+    ctx.lineWidth = 2.5; ctx.strokeStyle = sel ? '#fff' : '#d6342c'; ctx.stroke();
+    ctx.fillStyle = sel ? '#fff' : '#d6342c';
+    ctx.fillText(String(i + 1), xy[0], xy[1] + .5);
+  });
+  ctx.restore();
+}
+cv.addEventListener('pointerdown', e => {
+  if (mode !== 'edit') return;
+  audioInit();
+  const w = toWorld(e), i = hitHandle(w);
+  if (i >= 0) {
+    const now = performance.now();
+    if (i === lastTapI && now - lastTapT < 360) { deleteHandle(i); lastTapI = -1; lastTapT = 0; return; }
+    lastTapI = i; lastTapT = now;
+    pushUndo(); editSel = i;
+  } else {
+    pushUndo();
+    const at = nearestInsert(w);
+    editPts.splice(at, 0, { x: w.x, y: Math.min(w.y, editGround - 1.2) });
+    editSel = at;
+  }
+  editDrag = true; editPid = e.pointerId;
+  try { cv.setPointerCapture(e.pointerId); } catch (_) {}
+});
+cv.addEventListener('pointermove', e => {
+  if (mode !== 'edit' || !editDrag || e.pointerId !== editPid) return;
+  const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
+  const ev = (evs && evs.length ? evs[evs.length - 1] : e);
+  const w = toWorld(ev);
+  editPts[editSel] = { x: w.x, y: Math.min(w.y, editGround - 1.2) };
+  editDirty = true;                       // 真正的重建交给 frame，每帧最多一次
+});
+const endEditDrag = e => {
+  if (mode !== 'edit' || e.pointerId !== editPid) return;
+  editPid = null; editDrag = false; editDirty = true;
+};
+cv.addEventListener('pointerup', endEditDrag);
+cv.addEventListener('pointercancel', endEditDrag);
+cv.addEventListener('contextmenu', e => {
+  if (mode !== 'edit') return;
+  e.preventDefault();
+  const i = hitHandle(toWorld(e));
+  if (i >= 0) deleteHandle(i);
+});
+
+/* ---------- 粘贴 / 导入 / 导出 / 分享 ---------- */
+function jsonDef() { try { return JSON.parse($('#jsonBox').value); } catch (e) { showVerdict({ ok: false, errors: [{ msg: 'JSON 解析失败：' + e.message }], warnings: [] }); return null; } }
+function copyText(txt, okMsg) {
+  const done = () => toast(okMsg);
+  const fallback = () => {
+    const ta = document.createElement('textarea');
+    ta.value = txt; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    let ok = false; try { ok = document.execCommand('copy'); } catch (e) {}
+    ta.remove(); ok ? done() : (toast(L.copyFail), $('#jsonBox').value = txt);
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(done, fallback);
+  else fallback();
+}
+
+/* ---------- boot ---------- */
+$('#brandT').textContent = L.brand; document.title = L.brand;
+$('#h1').innerHTML = L.h1; $('#sub').textContent = L.sub;
+$('#bRedo').textContent = L.fresh; $('#readyMsg').textContent = L.readyMsg;
+$('#lLab').textContent = L.launchLabel; $('#nlLab').textContent = L.noLaunch;
+$('#gSpeedLab').textContent = L.speedLabel; $('#gGLab').textContent = L.gLabel; $('#gSlowLab').textContent = L.slowmo;
+$('#wKick').textContent = L.workshop; $('#wName').textContent = L.workshop; $('#wClose').textContent = L.close;
+$('#listHint').textContent = L.listHint; $('#rdHint').textContent = L.realDragHint;
+$('#jsonHint').textContent = L.jsonHint; $('#editHint').textContent = L.editHint; $('#jsonBox').placeholder = L.jsonHint;
+$('#wCheck').textContent = L.check; $('#wRide').textContent = L.rideIt; $('#wImport').textContent = L.importFile;
+$('#wExport').textContent = L.exportTrack; $('#wCopy').textContent = L.copyLink;
+$('#wEdit').textContent = L.editTrack; $('#wSnippet').textContent = L.snippet; $('#wStats').textContent = '';
+$('#eUndo').textContent = L.undo; $('#eClear').textContent = L.clear; $('#eDone').textContent = L.editDone; $('#eCancel').textContent = L.cancel;
+$('#rShop').textContent = L.workshop; $('#shopBtn').title = L.openWorkshop;
+$('#wTabs').querySelectorAll('button').forEach(b => { b.textContent = b.dataset.pane === 'list' ? L.tabList : b.dataset.pane === 'json' ? L.tabJson : L.tabEdit; });
+$('#lPresets').innerHTML = LAUNCH_PRESETS.map(v => '<button type="button" data-v="' + v + '">' + (v >= 1000 ? (v / 1000) + 'k' : v) + '</button>').join('')
+  + '<button type="button" data-v="0">' + L.gravityStart + '</button>';
+
+/* ---------- 接线 ---------- */
+$('#lPresets').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  const v = +b.dataset.v;
+  if (!v) noLaunch = true; else { noLaunch = false; launchKmh = v; }
+  store.set('launch', launchKmh); store.set('noLaunch', noLaunch ? 1 : 0); syncLaunchUI();
+});
+$('#launchRange').addEventListener('input', () => {
+  launchKmh = posToKmh(+$('#launchRange').value); noLaunch = false;
+  store.set('launch', launchKmh); store.set('noLaunch', 0); syncLaunchUI();
+});
+$('#noLaunch').addEventListener('change', () => {
+  noLaunch = $('#noLaunch').checked; store.set('noLaunch', noLaunch ? 1 : 0); syncLaunchUI();
+});
+$('#realDrag').addEventListener('change', () => {
+  arcadeDrag = !$('#realDrag').checked; store.set('arcade', arcadeDrag ? 1 : 0); applyArcade();
+});
+$('#gSlow').addEventListener('click', () => setSlowIdx(slowIdx >= SLOW_STEPS.length - 1 ? 0 : slowIdx + 1));
+$('#shopBtn').addEventListener('click', () => openWorkshop('list'));
+$('#rShop').addEventListener('click', () => { $('#result').hidden = true; openWorkshop('list'); });
+$('#wClose').addEventListener('click', closeWorkshop);
+$('#wTabs').addEventListener('click', e => { const b = e.target.closest('button'); if (b) setTab(b.dataset.pane); });
+$('#wCheck').addEventListener('click', () => { const d = jsonDef(); if (d) { lastVerdict = TA.validate(d); showVerdict(lastVerdict); } });
+$('#wRide').addEventListener('click', () => {
+  const d = jsonDef(); if (!d) return;
+  const v = TA.validate(d); lastVerdict = v; showVerdict(v);
+  if (v.ok) { sessionDefs.push(d); renderTrackList(); rideDef(d); }
+});
+$('#wExport').addEventListener('click', () => {
+  const d = exportDef(); if (!d) { toast(L.noTracks); return; }
+  $('#jsonBox').value = JSON.stringify(d, null, 1);
+  setTab('json'); showVerdict(TA.validate(d));
+});
+$('#wCopy').addEventListener('click', () => {
+  const h = shareHash(); if (!h) { toast(L.noTracks); return; }
+  const base = location.protocol === 'file:' ? location.href.split('#')[0] : location.origin + location.pathname + '?lang=' + LANG;
+  const url = base + '#' + h;
+  if (url.length > 8000) { toast('轨道太长，链接放不下 —— 用「导出轨道」存成文件吧'); return; }
+  copyText(url, L.copied);
+});
+$('#wImport').addEventListener('click', () => $('#wFile').click());
+$('#wFile').addEventListener('change', () => {
+  const f = $('#wFile').files && $('#wFile').files[0]; if (!f) return;
+  const fr = new FileReader();
+  fr.onload = () => {
+    $('#jsonBox').value = String(fr.result);
+    const d = jsonDef(); if (!d) return;
+    const v = TA.validate(d); lastVerdict = v; showVerdict(v);
+    if (v.ok) { sessionDefs.push(d); renderTrackList(); }
+  };
+  fr.readAsText(f);
+  $('#wFile').value = '';
+});
+$('#wEdit').addEventListener('click', () => {
+  enterEdit(currentDef || (ctrl ? { points: ctrl.map(p => [p.x, groundY - p.y]), ground: groundY } : null));
+});
+$('#wSnippet').addEventListener('click', () => {
+  const d = exportDef(); if (!d) { toast(L.noTracks); return; }
+  const pts = d.points.map(p => '[' + p[0] + ', ' + p[1] + ']').join(', ');
+  const snippet = '  {\n    id: ' + JSON.stringify(d.id) + ', name: ' + JSON.stringify(d.name) + ', ground: ' + d.ground + ', launch: ' + d.launch + ',\n    points: [' + pts + '],\n  },';
+  copyText(snippet, L.snippetDone);
+});
+$('#eUndo').addEventListener('click', () => {
+  if (editUndo.length) { editPts = editUndo.pop(); editSel = -1; rebuildEdit(true); updateEditInfo(); }
+});
+$('#eClear').addEventListener('click', () => {
+  pushUndo();
+  const y = editGround - 24;
+  editPts = [{ x: 0, y: editGround - 1.2 }, { x: 40, y }, { x: 80, y: editGround - 6 }, { x: 120, y: editGround - 1.2 }];
+  editSel = -1; rebuildEdit(true); updateEditInfo();
+});
+$('#eDone').addEventListener('click', () => exitEdit(true));
+$('#eCancel').addEventListener('click', () => exitEdit(false));
+addEventListener('keydown', e => {
+  if (mode === 'ride' && (e.key === 's' || e.key === 'S')) { e.preventDefault(); setSlowIdx(slowIdx >= SLOW_STEPS.length - 1 ? 0 : slowIdx + 1); }
+  if (mode === 'edit' && e.key === 'Enter') { e.preventDefault(); exitEdit(true); }
+  if (mode === 'edit' && e.key === 'Escape') { e.preventDefault(); exitEdit(false); }
+  if (mode === 'edit' && (e.key === 'z' || e.key === 'Z')) { e.preventDefault(); if (editUndo.length) { editPts = editUndo.pop(); editSel = -1; rebuildEdit(true); updateEditInfo(); } }
+});
+applyArcade();
+syncLaunchUI();
+resize();
+
+function showSharedOverlay() {
+  mode = 'shared'; ride = newRide(); prepare3D(); $('#hint').classList.add('off');
+  document.body.classList.add('hasTrack'); document.body.classList.remove('ready', 'riding', 'editing');
+  $('#sKick').textContent = L.sKick; $('#sName').textContent = L.sName;
+  $('#sDraw').textContent = L.sDraw; $('#sPov').textContent = L.ride;
+  $('#sharedOv').hidden = false;
+}
+// 分享链接：原作是 #t=/#c=（字节编码，仍然完全兼容）；自己设计的轨道用 #j=（JSON）。
+const mj = location.hash.match(/(?:^#|&)j=([A-Za-z0-9_-]+)/);
+const mc = location.hash.match(/(?:^#|&)([ct])=([A-Za-z0-9_-]+)/);
+if (mj) {
+  try {
+    const v = loadDef(JSON.parse(b64uDecode(mj[1])), true);
+    if (v.ok) showSharedOverlay(); else { toast(v.errors[0].msg); resetDraw(); }
+  } catch (e) { resetDraw(); }
+} else if (mc) {
+  try {
+    codeKey = mc[1]; code = mc[2]; loadCode(code, true, codeKey === 'c' ? 10 : UNIT); baseView = Object.assign({}, view); buildBackdrop();
+    showSharedOverlay();
+  } catch (e) { resetDraw(); }
+}
+requestAnimationFrame(frame);
+
+/* ---------- ?test=1 的无头验证钩子 ---------- */
+if (QP.get('test') === '1') window.__olc = {
+  get phys() { return P; },
+  sample: s => sample(track, s),
+  get view3d() { return view3d; }, get ride() { return ride; }, get mode() { return mode; },
+  get code() { return code; }, get track() { return track; }, get ctrl() { return ctrl; },
+  get groundY() { return groundY; }, get view() { return view; }, get lang() { return LANG; },
+  get launchKmh() { return noLaunch ? 0 : launchKmh; },
+  get slowmo() { return slowFactor(); },
+  get editing() { return editing; },
+  get editPts() { return editPts.map(p => ({ x: p.x, y: p.y })); },
+  get bodyClass() { return document.body.className; },
+  dry: opts => simulate(ctrl, Object.assign({ dt: .05 }, opts || {})),
+  stats: () => ride ? { v: ride.v, vmax: ride.vmax, gAbsMax: ride.gAbsMax, t: ride.t, launchA: ride.launchA, launchV: ride.launchV, ended: ride.ended, faulted: ride.faulted } : null,
+  setArcade: on => { arcadeDrag = !on; applyArcade(); },
+  setLaunch: kmh => { launchKmh = Math.max(LAUNCH_MIN, Math.min(LAUNCH_MAX, kmh)); noLaunch = false; syncLaunchUI(); },
+  setNoLaunch: on => { noLaunch = !!on; syncLaunchUI(); },
+  loadDef: (d, shared) => loadDef(d, shared),
+  openWorkshop, closeWorkshop, setTab, renderTrackList,
+  enterEdit: d => enterEdit(d), exitEdit: a => exitEdit(a),
+  editMove: (i, x, y) => { editPts[i] = { x, y }; rebuildEdit(true); updateEditInfo(); },
+  editAdd: (x, y) => { const at = nearestInsert({ x, y }); editPts.splice(at, 0, { x, y }); rebuildEdit(true); updateEditInfo(); return at; },
+  editDelete: i => deleteHandle(i),
+  editUndo: () => { if (editUndo.length) { editPts = editUndo.pop(); rebuildEdit(true); updateEditInfo(); return true; } return false; },
+  setSlowIdx, shareHash, exportDef,
+  sessionDefs: () => sessionDefs.slice(),
+  builtinDefs: () => builtinDefs.slice(),
+  ready: () => { if (track) { baseView = Object.assign({}, view); enterReady(); } return mode; },
+};
+})();
+
+</script>
+</body>
+</html>

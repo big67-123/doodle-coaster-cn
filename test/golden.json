@@ -1,0 +1,32 @@
+{
+  "source": "original build (reference implementation), fixed step 1/240 s",
+  "cases": {
+    "gentle": {
+      "label": "缓坡 300m/60m",
+      "ctrlPoints": 321,
+      "trackLen": 320,
+      "frames": 1529,
+      "t": 25.483333333,
+      "endV": 1.5,
+      "vmax": 28.735073392
+    },
+    "steep": {
+      "label": "陡降 900m/400m",
+      "ctrlPoints": 1163,
+      "trackLen": 1162,
+      "frames": 4246,
+      "t": 70.766666667,
+      "endV": 1.5,
+      "vmax": 62.956093523
+    },
+    "long": {
+      "label": "长轨 2000m/200m",
+      "ctrlPoints": 2036,
+      "trackLen": 2035,
+      "frames": 7868,
+      "t": 131.120833333,
+      "endV": 1.5,
+      "vmax": 35.602719337
+    }
+  }
+}
