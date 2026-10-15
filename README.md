@@ -1,5 +1,7 @@
 # 涂鸦过山车 · Doodle Coaster CN
 
+**▶ 在线试玩：<https://big67-123.github.io/doodle-coaster-cn/>**（手机浏览器直接打开，不用装任何东西）
+
 随手画一条线，它就会变成一条真的过山车轨道 —— 然后第一人称坐上去。
 
 原版是 [らくがきコースター / Doodle Coaster](https://rakugaki-coaster.pages.dev/)（作者 [@kikuchitls](https://x.com/kikuchitls)），
@@ -90,6 +92,8 @@
 ---
 
 ## 本地开发与测试
+
+也可以在本地直接双击 `index.html`（`physics.js` / `tracks.js` 都是经典 script，`file://` 下也能加载）。
 
 ```bash
 node --test test/physics.test.mjs test/tracks.test.mjs   # 物理 + 轨道校验
