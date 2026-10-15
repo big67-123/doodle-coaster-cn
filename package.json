@@ -4,7 +4,7 @@
   "private": true,
   "description": "涂鸦过山车 中文版 — 一笔画轨道 + 电磁弹射(100-10000km/h) + 速度/G 仪表 + 轨道工坊",
   "scripts": {
-    "test": "node --test test/physics.test.mjs test/tracks.test.mjs",
+    "test": "node --test test/physics.test.mjs test/tracks.test.mjs test/scope.test.mjs",
     "serve": "node _tools/serve.mjs"
   }
 }

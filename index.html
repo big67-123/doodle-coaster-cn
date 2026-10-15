@@ -257,9 +257,7 @@ body.editing #hud{display:none}
     </div>
     <div class="pane on" data-pane="list">
       <div class="tlist" id="trackList"></div>
-      <label class="ltoggle" style="margin-top:14px"><input id="realDrag" type="checkbox"><span id="rdLab"></span></label>
       <p class="hintline" id="listHint"></p>
-      <p class="hintline" id="rdHint"></p>
     </div>
     <div class="pane" data-pane="json">
       <textarea id="jsonBox" spellcheck="false"></textarea>
@@ -341,8 +339,6 @@ const T = {
     editTrack: '✎ 编辑这条轨道', openWorkshop: '🛠 轨道工坊',
     needPoints: '至少要有 3 个控制点',
     totalLen: '总长', peak: '最高点', points: '控制点',
-    realDrag: '真实空气阻力', arcadeDrag: '街机阻力',
-    realDragHint: '开：完全保留原作的阻力公式，10000 km/h 会被空气瞬间吃掉，图一乐。关：街机模式，高速时阻力封顶，弹射才坐得住。',
     slowHint: '弹射速度很高，已自动切到慢动作 —— 仪表上的数字仍是真实速度。',
   },
   en: {
@@ -376,8 +372,6 @@ Object.assign(T.en, {
   editTrack: '✎ Edit this track', openWorkshop: '🛠 Track workshop',
   needPoints: 'A track needs at least 3 control points',
   totalLen: 'Length', peak: 'Peak', points: 'Control points',
-  realDrag: 'Real air drag', arcadeDrag: 'Arcade drag',
-  realDragHint: 'On: the original drag formula, verbatim — at 10 000 km/h the air eats the train instantly (just for laughs). Off: arcade mode caps drag so a hypersonic launch stays rideable.',
   slowHint: 'That launch is very fast, so slow-motion is on — the gauge still shows real values.',
 });
 const L = Object.assign({}, T.en, T[LANG] || {});
@@ -998,10 +992,11 @@ function drawTrain(dt) {
 }
 
 function frame(now) {
-  const raw = Math.min(.05, (now - (frame.last || now)) / 1000); frame.last = now;
+  // 注意：这个局部变量不能叫 raw —— raw 是模块级的轨道点数组，遮蔽它会让下面的实时绘制分支静默失效。
+  const frameDt = Math.min(.05, (now - (frame.last || now)) / 1000); frame.last = now;
   // 慢动作只缩放行驶过程：站台等待必须走实时，否则选了 10000 km/h 会在站台上干等一分多钟。
   const atStation = ride && ride.hold > 0;
-  const dt = atStation ? raw : raw / slowFactor();   // 仪表读的始终是真实 r.v
+  const dt = atStation ? frameDt : frameDt / slowFactor();   // 仪表读的始终是真实 r.v
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   if (backdrop) ctx.drawImage(backdrop, 0, 0, W, H); else { ctx.fillStyle = '#9fd4f2'; ctx.fillRect(0, 0, W, H); }
 
@@ -1396,7 +1391,6 @@ const posToKmh = p => Math.max(LAUNCH_MIN, Math.min(LAUNCH_MAX, Math.round(LAUNC
 const kmhToPos = v => Math.round(1000 * Math.log(Math.max(LAUNCH_MIN, Math.min(LAUNCH_MAX, v)) / LAUNCH_MIN) / Math.log(LAUNCH_MAX / LAUNCH_MIN));
 let launchKmh = Math.max(LAUNCH_MIN, Math.min(LAUNCH_MAX, +store.get('launch', LAUNCH_DEF) || LAUNCH_DEF));
 let noLaunch = store.get('noLaunch', '0') === '1';
-let arcadeDrag = store.get('arcade', '1') === '1';
 function syncLaunchUI() {
   $('#launchRange').value = noLaunch ? 0 : kmhToPos(launchKmh);
   $('#noLaunch').checked = noLaunch;
@@ -1405,12 +1399,6 @@ function syncLaunchUI() {
   $('#bGo').textContent = noLaunch ? L.start : L.launch;
   $('#lPresets').querySelectorAll('button').forEach(b => b.classList.toggle('on', !noLaunch && +b.dataset.v === launchKmh));
 }
-function applyArcade() {
-  setArcade(arcadeDrag);
-  $('#realDrag').checked = !arcadeDrag;
-  $('#rdLab').textContent = arcadeDrag ? L.arcadeDrag : L.realDrag;
-}
-
 /* ---------- 慢动作：只缩放积分步长，仪表上的数字始终是真实值 ---------- */
 const SLOW_STEPS = [1, 10, 50];
 let slowIdx = 0;
@@ -1745,7 +1733,7 @@ $('#bRedo').textContent = L.fresh; $('#readyMsg').textContent = L.readyMsg;
 $('#lLab').textContent = L.launchLabel; $('#nlLab').textContent = L.noLaunch;
 $('#gSpeedLab').textContent = L.speedLabel; $('#gGLab').textContent = L.gLabel; $('#gSlowLab').textContent = L.slowmo;
 $('#wKick').textContent = L.workshop; $('#wName').textContent = L.workshop; $('#wClose').textContent = L.close;
-$('#listHint').textContent = L.listHint; $('#rdHint').textContent = L.realDragHint;
+$('#listHint').textContent = L.listHint;
 $('#jsonHint').textContent = L.jsonHint; $('#editHint').textContent = L.editHint; $('#jsonBox').placeholder = L.jsonHint;
 $('#wCheck').textContent = L.check; $('#wRide').textContent = L.rideIt; $('#wImport').textContent = L.importFile;
 $('#wExport').textContent = L.exportTrack; $('#wCopy').textContent = L.copyLink;
@@ -1769,9 +1757,6 @@ $('#launchRange').addEventListener('input', () => {
 });
 $('#noLaunch').addEventListener('change', () => {
   noLaunch = $('#noLaunch').checked; store.set('noLaunch', noLaunch ? 1 : 0); syncLaunchUI();
-});
-$('#realDrag').addEventListener('change', () => {
-  arcadeDrag = !$('#realDrag').checked; store.set('arcade', arcadeDrag ? 1 : 0); applyArcade();
 });
 $('#gSlow').addEventListener('click', () => setSlowIdx(slowIdx >= SLOW_STEPS.length - 1 ? 0 : slowIdx + 1));
 $('#shopBtn').addEventListener('click', () => openWorkshop('list'));
@@ -1835,7 +1820,7 @@ addEventListener('keydown', e => {
   if (mode === 'edit' && e.key === 'Escape') { e.preventDefault(); exitEdit(false); }
   if (mode === 'edit' && (e.key === 'z' || e.key === 'Z')) { e.preventDefault(); if (editUndo.length) { editPts = editUndo.pop(); editSel = -1; rebuildEdit(true); updateEditInfo(); } }
 });
-applyArcade();
+setArcade(true);          // 街机阻力是唯一发布手感（见 README「物理说明」）
 syncLaunchUI();
 resize();
 
@@ -1876,7 +1861,7 @@ if (QP.get('test') === '1') window.__olc = {
   get bodyClass() { return document.body.className; },
   dry: opts => simulate(ctrl, Object.assign({ dt: .05 }, opts || {})),
   stats: () => ride ? { v: ride.v, vmax: ride.vmax, gAbsMax: ride.gAbsMax, t: ride.t, launchA: ride.launchA, launchV: ride.launchV, ended: ride.ended, faulted: ride.faulted } : null,
-  setArcade: on => { arcadeDrag = !on; applyArcade(); },
+  setArcade: on => setArcade(on !== false),
   setLaunch: kmh => { launchKmh = Math.max(LAUNCH_MIN, Math.min(LAUNCH_MAX, kmh)); noLaunch = false; syncLaunchUI(); },
   setNoLaunch: on => { noLaunch = !!on; syncLaunchUI(); },
   loadDef: (d, shared) => loadDef(d, shared),
