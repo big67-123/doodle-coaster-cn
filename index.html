@@ -319,7 +319,7 @@ const T = {
     sKick: '有人画了这条轨道', sName: '要坐一次吗？', sDraw: '我自己画',
     tweet: '我一笔画出了一座过山车 🎢\n来坐坐看：', tag: '涂鸦过山车',
     // 仪表
-    speedLabel: '速度', gLabel: 'G 值', slowmo: '慢动作', slowmoOff: '正常',
+    speedLabel: '速度', gLabel: 'G 值', gAirtime: '失重', gHeavy: '超重', slowmoOff: '正常',
     // 弹射
     launchLabel: '弹射速度', launch: '⚡ 电磁弹射', gravityStart: '重力起步',
     noLaunch: '不弹射（重力起步）', launchToast: '⚡ 电磁弹射 · {v}',
@@ -339,7 +339,7 @@ const T = {
     editTrack: '✎ 编辑这条轨道', openWorkshop: '🛠 轨道工坊',
     needPoints: '至少要有 3 个控制点',
     totalLen: '总长', peak: '最高点', points: '控制点',
-    slowHint: '弹射速度很高，已自动切到慢动作 —— 仪表上的数字仍是真实速度。',
+    slowHint: '慢动作目标 ≈{n} 秒 —— 仪表上的数字仍是真实速度。',
   },
   en: {
     brand: 'Doodle Coaster', h1: 'Draw a roller coaster<br>in one stroke', sub: 'Any line you draw becomes a ride.',
@@ -354,7 +354,7 @@ const T = {
 // 以英文为基底再覆盖，这样新增的界面文案在某个语言缺失时会自动回落到英文。
 // 后加的界面（仪表 / 弹射 / 工坊 / 编辑器）先补齐英文，缺哪门语言都不会出现 undefined。
 Object.assign(T.en, {
-  speedLabel: 'Speed', gLabel: 'G force', slowmo: 'Slow-mo',
+  speedLabel: 'Speed', gLabel: 'G force', gAirtime: 'airtime', gHeavy: 'heavy', slowmoOff: 'Normal',
   launchLabel: 'Launch speed', launch: '⚡ Electromagnetic launch', gravityStart: 'Gravity',
   noLaunch: 'No launch (roll out by gravity)', launchToast: '⚡ Launch · {v}',
   maxSpeed: 'Top speed', maxG: 'Peak G', duration: 'Time', entrySpeed: 'Station entry', launchA: 'Launch accel',
@@ -372,12 +372,15 @@ Object.assign(T.en, {
   editTrack: '✎ Edit this track', openWorkshop: '🛠 Track workshop',
   needPoints: 'A track needs at least 3 control points',
   totalLen: 'Length', peak: 'Peak', points: 'Control points',
-  slowHint: 'That launch is very fast, so slow-motion is on — the gauge still shows real values.',
+  slowHint: 'Slow-mo targets about {n}s per ride — the gauge still shows real values.',
 });
 const L = Object.assign({}, T.en, T[LANG] || {});
 
-/* ---------- world (1 unit = 1 m; the drawer's screen is 10 px per metre) ---------- */
-const PX_PER_M = 10, GROUND_PX = 76;
+/* ---------- world (1 unit = 1 m) ---------- */
+// 「一屏宽代表多少米世界」。调大 → 同一屏画出来的轨道更长、车程更久；但待出发界面会把整条
+// 轨道缩放到刚好装满屏幕，所以世界越大、车相对屏幕就越小 —— 这两个诉求天生互相拉扯。
+const WORLD_PER_SCREEN = 200, GROUND_PX = 76;
+let PX_PER_M = 10;                 // 由 resize() 按屏宽重算
 const cv = $('#cv');
 let ctx = cv.getContext('2d');
 let W = 0, H = 0, DPR = 1;
@@ -389,6 +392,7 @@ let raw = [], pid = null, ctrl = null, track = null, code = '', codeKey = 't', r
 function resize() {
   DPR = Math.min(window.devicePixelRatio || 1, 2);
   W = innerWidth; H = innerHeight;
+  PX_PER_M = Math.max(.5, W / WORLD_PER_SCREEN);       // 一屏宽 ≈ WORLD_PER_SCREEN 米
   cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
   if (!track && mode !== 'drawing') { view = { s: PX_PER_M, ox: 0, oy: 0 }; groundY = (H - GROUND_PX) / PX_PER_M; }
   else if (track && (fitted || mode === 'shared')) { fitView(); baseView = { ...view }; }
@@ -518,7 +522,8 @@ function fitView() {
   }
   minY -= 5; minX -= 4; maxX += 6;
   const top = 76, bottom = H - GROUND_PX;
-  const s = Math.max(2, Math.min(16, Math.min((W - 24) / (maxX - minX), (bottom - top) / (groundY - minY))));
+  // 下限放到 0.1：世界尺度变大后手机上一屏就有 200 米，长轨道不该再被"最小 2 px/m"顶出屏幕。
+  const s = Math.max(.1, Math.min(16, Math.min((W - 24) / (maxX - minX), (bottom - top) / (groundY - minY))));
   view = { s, ox: W / 2 - s * (minX + maxX) / 2, oy: bottom - s * groundY };
   fitted = true;
 }
@@ -536,7 +541,12 @@ function startRide() {
   ride = newRide(); ride.hold = HOLD;
   const kmh = noLaunch ? 0 : launchKmh;
   if (kmh > 0 && track) applyLaunch(ride, track, kmh);   // 弹射在站台放行后才真正发力（见 launchHook）
-  autoSlow(kmh);
+  // 先无头跑一遍拿到真实车程，再按目标观感时长反推慢动作系数（见「慢动作」一节）
+  // 步长用 1/40 而不是渲染用的 1/240：>60 m/s 后自适应用的是空间步长，帧长对时长几乎无影响，
+  // 但粗 6 倍能把这瞬间的阻塞从 ~0.4 秒压到 ~0.1 秒。
+  rideSimT = Math.max(.02, simulate(ctrl, { launchKmh: kmh, dt: 1 / 40 }).t);
+  slowFactorNow = 1;
+  retargetSlow(0);
   gauge.s = gauge.g = gauge.peak = null;
   mode = 'ride';
   setView3d(true);                                   // the ride itself is first person; the side view is the mini map
@@ -552,7 +562,7 @@ function finishRide() {
 }
 function showResult() {
   document.body.classList.remove('riding', 'hyperspeed');
-  setSlowIdx(0);
+  slowFactorNow = 1; updateSlowUI();
   $('#rKick').textContent = L.kick;
   $('#rName').textContent = L.done;
   const r = ride, K = v => Math.round(v * 3.6).toLocaleString('zh-CN');
@@ -1400,27 +1410,51 @@ function syncLaunchUI() {
   $('#lPresets').querySelectorAll('button').forEach(b => b.classList.toggle('on', !noLaunch && +b.dataset.v === launchKmh));
 }
 /* ---------- 慢动作：只缩放积分步长，仪表上的数字始终是真实值 ---------- */
-const SLOW_STEPS = [1, 10, 50];
-let slowIdx = 0;
-const slowFactor = () => SLOW_STEPS[slowIdx];
-function setSlowIdx(i) {
-  slowIdx = Math.max(0, Math.min(SLOW_STEPS.length - 1, i));
-  $('#gSlowIcon').textContent = slowIdx === 0 ? '▶' : '1/' + SLOW_STEPS[slowIdx];
-  document.body.classList.toggle('slowmo', slowIdx > 0);
+// 原来用固定档（1/10、1/50）配一个按弹射速度猜的阈值，落点很差：重力起步 20 秒的轨道切
+// 1/10 要干等 200 秒，而 300 km/h 弹射的小轨道 1/10 只有 10 秒。改成先无头模拟出真实车程
+// T，再按「目标观感时长」反推系数 slow = 目标 / T —— 任何轨道都落在同一个观感时长附近。
+const SLOW_TARGETS = [0, 10, 20, 45];       // 秒；0 = 原速不缩放
+const storedSlowT = +store.get('slowTarget', '2');
+let slowTargetIdx = Number.isFinite(storedSlowT) ? Math.max(0, Math.min(SLOW_TARGETS.length - 1, storedSlowT)) : 2;
+let slowFactorNow = 1;                      // 本次乘坐的缩放系数（分母）
+let rideSimT = 0;                           // 本次乘坐的模拟总时长（秒）
+const slowFactor = () => slowFactorNow;
+const slowTarget = () => SLOW_TARGETS[slowTargetIdx];
+const fmtSlow = f => f >= 10 ? String(Math.round(f)) : f.toFixed(1);
+
+function updateSlowUI() {
+  const on = slowFactorNow > 1;
+  $('#gSlowIcon').textContent = on ? '1/' + fmtSlow(slowFactorNow) : '▶';
+  $('#gSlowLab').textContent = slowTarget() > 0 ? '≈' + slowTarget() + 's' : L.slowmoOff;
+  document.body.classList.toggle('slowmo', on);
 }
-function autoSlow(kmh) {
-  setSlowIdx(kmh > 2000 ? 2 : kmh > 800 ? 1 : 0);
-  if (slowIdx > 0) toast(L.slowHint);
+// 把「剩余模拟时间」缩放到「剩余目标观感时间」。出发时调一次，中途改档也按剩余量重算。
+function retargetSlow(elapsedWall) {
+  const t = slowTarget();
+  const simLeft = Math.max(.02, rideSimT - (ride ? ride.t : 0));
+  slowFactorNow = (t <= 0 || !(rideSimT > 0)) ? 1
+    : Math.max(1, Math.min(400, Math.round(Math.max(.5, t - (elapsedWall || 0)) / simLeft * 10) / 10));
+  updateSlowUI();
+}
+function cycleSlow() {
+  const elapsedWall = ride ? ride.t * slowFactorNow : 0;      // 这次已经看掉的墙钟时间
+  slowTargetIdx = (slowTargetIdx + 1) % SLOW_TARGETS.length;
+  store.set('slowTarget', slowTargetIdx);
+  retargetSlow(elapsedWall);
+  toast(slowTarget() > 0 ? L.slowHint.replace('{n}', slowTarget() + '') : L.slowmoOff);
 }
 
 /* ---------- 仪表 ---------- */
-const gauge = { s: null, g: null, fill: null, peak: null };
+const gauge = { s: null, g: null, glab: null, fill: null, peak: null };
 function updateGauge() {
   const r = ride;
   const kmh = Math.round(r.v * 3.6);
   if (kmh !== gauge.s) { gauge.s = kmh; $('#gSpeed').textContent = kmh.toLocaleString('zh-CN'); }
   const gs = fmtG(r.g);
   if (gs !== gauge.g) { gauge.g = gs; $('#gG').textContent = gs; $('#gG').style.color = r.g < 0 ? '#8fd6ff' : ''; }
+  // 负 G 不是 bug：凸曲率处向心力超过重力，人是被从座位上"拽起来"的。标出来，省得当成故障。
+  const glab = r.g < .35 ? L.gAirtime : (r.g > 3 ? L.gHeavy : L.gLabel);
+  if (glab !== gauge.glab) { gauge.glab = glab; $('#gGLab').textContent = glab; }
   const fill = (gLog(r.g) * 100).toFixed(1) + '%';
   if (fill !== gauge.fill) { gauge.fill = fill; $('#gFill').style.width = fill; }
   const peak = (gLog(r.gAbsMax) * 100).toFixed(1) + '%';
@@ -1731,7 +1765,7 @@ $('#brandT').textContent = L.brand; document.title = L.brand;
 $('#h1').innerHTML = L.h1; $('#sub').textContent = L.sub;
 $('#bRedo').textContent = L.fresh; $('#readyMsg').textContent = L.readyMsg;
 $('#lLab').textContent = L.launchLabel; $('#nlLab').textContent = L.noLaunch;
-$('#gSpeedLab').textContent = L.speedLabel; $('#gGLab').textContent = L.gLabel; $('#gSlowLab').textContent = L.slowmo;
+$('#gSpeedLab').textContent = L.speedLabel; $('#gGLab').textContent = L.gLabel; updateSlowUI();
 $('#wKick').textContent = L.workshop; $('#wName').textContent = L.workshop; $('#wClose').textContent = L.close;
 $('#listHint').textContent = L.listHint;
 $('#jsonHint').textContent = L.jsonHint; $('#editHint').textContent = L.editHint; $('#jsonBox').placeholder = L.jsonHint;
@@ -1758,7 +1792,7 @@ $('#launchRange').addEventListener('input', () => {
 $('#noLaunch').addEventListener('change', () => {
   noLaunch = $('#noLaunch').checked; store.set('noLaunch', noLaunch ? 1 : 0); syncLaunchUI();
 });
-$('#gSlow').addEventListener('click', () => setSlowIdx(slowIdx >= SLOW_STEPS.length - 1 ? 0 : slowIdx + 1));
+$('#gSlow').addEventListener('click', cycleSlow);
 $('#shopBtn').addEventListener('click', () => openWorkshop('list'));
 $('#rShop').addEventListener('click', () => { $('#result').hidden = true; openWorkshop('list'); });
 $('#wClose').addEventListener('click', closeWorkshop);
@@ -1815,7 +1849,7 @@ $('#eClear').addEventListener('click', () => {
 $('#eDone').addEventListener('click', () => exitEdit(true));
 $('#eCancel').addEventListener('click', () => exitEdit(false));
 addEventListener('keydown', e => {
-  if (mode === 'ride' && (e.key === 's' || e.key === 'S')) { e.preventDefault(); setSlowIdx(slowIdx >= SLOW_STEPS.length - 1 ? 0 : slowIdx + 1); }
+  if (mode === 'ride' && (e.key === 's' || e.key === 'S')) { e.preventDefault(); cycleSlow(); }
   if (mode === 'edit' && e.key === 'Enter') { e.preventDefault(); exitEdit(true); }
   if (mode === 'edit' && e.key === 'Escape') { e.preventDefault(); exitEdit(false); }
   if (mode === 'edit' && (e.key === 'z' || e.key === 'Z')) { e.preventDefault(); if (editUndo.length) { editPts = editUndo.pop(); editSel = -1; rebuildEdit(true); updateEditInfo(); } }
@@ -1871,7 +1905,10 @@ if (QP.get('test') === '1') window.__olc = {
   editAdd: (x, y) => { const at = nearestInsert({ x, y }); editPts.splice(at, 0, { x, y }); rebuildEdit(true); updateEditInfo(); return at; },
   editDelete: i => deleteHandle(i),
   editUndo: () => { if (editUndo.length) { editPts = editUndo.pop(); rebuildEdit(true); updateEditInfo(); return true; } return false; },
-  setSlowIdx, shareHash, exportDef,
+  get slowTarget() { return slowTarget(); }, get rideSimT() { return rideSimT; },
+  setSlowTarget: i => { slowTargetIdx = Math.max(0, Math.min(SLOW_TARGETS.length - 1, i | 0)); store.set('slowTarget', slowTargetIdx); retargetSlow(0); return slowTargetIdx; },
+  setSlowFactor: f => { slowFactorNow = Math.max(.01, Number(f) || 1); updateSlowUI(); return slowFactorNow; },
+  cycleSlow, shareHash, exportDef,
   sessionDefs: () => sessionDefs.slice(),
   builtinDefs: () => builtinDefs.slice(),
   ready: () => { if (track) { baseView = Object.assign({}, view); enterReady(); } return mode; },
