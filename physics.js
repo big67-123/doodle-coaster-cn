@@ -24,6 +24,10 @@ const SMOOTH_TURN = 2, SMOOTH_PULL = 6;               // metres
 // LSM one -- the industry describes LSM as the smooth, computer-metered push.
 const LAUNCH_FRAC = .15, LAUNCH_MIN = 20, LAUNCH_MAX = 60;
 const BURST_R = .45;
+// Maximum bank on a 3D turn, and the only tuning knob the tilt needs. phi = atan(v^2*kh/g) would
+// cancel the sideways force exactly; capping it keeps a badly authored turn from over-banking into
+// negative G at the top.
+const BANK_MAX = .87;           // radians, about 50 degrees
 
 // ---------- tuning ----------
 // The defaults reproduce the original physics bit-for-bit. Arcade mode turns the two caps on;
@@ -102,50 +106,127 @@ function buildControl(pts, groundY) {
 }
 
 function buildTrack(c) {
+  // A control point carrying a z makes this a real 3D layout. Two-dimensional input -- every
+  // hand-drawn track and every existing JSON -- takes the untouched branch below, which is why
+  // T.is3D stays false and the numbers come out bit-for-bit as before.
+  const is3D = c.some(p => typeof p.z === 'number');
   const dense = [];
   const P = i => c[Math.max(0, Math.min(c.length - 1, i))];
   for (let i = 0; i < c.length - 1; i++) {
     const p0 = P(i - 1), p1 = P(i), p2 = P(i + 1), p3 = P(i + 2);
+    const z0 = is3D ? (p0.z || 0) : 0, z1 = is3D ? (p1.z || 0) : 0, z2 = is3D ? (p2.z || 0) : 0, z3 = is3D ? (p3.z || 0) : 0;
     for (let k = 0; k < 8; k++) {
       const t = k / 8, t2 = t * t, t3 = t2 * t;
-      dense.push({
+      const q = {
         x: .5 * (2 * p1.x + (-p0.x + p2.x) * t + (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * t2 + (-p0.x + 3 * p1.x - 3 * p2.x + p3.x) * t3),
         y: .5 * (2 * p1.y + (-p0.y + p2.y) * t + (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * t2 + (-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * t3)
-      });
+      };
+      if (is3D) q.z = .5 * (2 * z1 + (-z0 + z2) * t + (2 * z0 - 5 * z1 + 4 * z2 - z3) * t2 + (-z0 + 3 * z1 - 3 * z2 + z3) * t3);
+      dense.push(q);
     }
   }
   dense.push({ ...c[c.length - 1] });
-  // arc-length resample
-  const xs = [dense[0].x], ys = [dense[0].y];
+  // arc-length resample; a 3D layout is resampled along its true 3D length
+  const xs = [dense[0].x], ys = [dense[0].y], zl = is3D ? [dense[0].z || 0] : null;
   let carry = 0;
   for (let i = 1; i < dense.length; i++) {
-    const a = dense[i - 1], b = dense[i], d = Math.hypot(b.x - a.x, b.y - a.y);
+    const a = dense[i - 1], b = dense[i];
+    const d = is3D ? Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z) : Math.hypot(b.x - a.x, b.y - a.y);
     if (d < 1e-6) continue;
     let t = DS - carry;
-    while (t <= d) { const k = t / d; xs.push(a.x + (b.x - a.x) * k); ys.push(a.y + (b.y - a.y) * k); t += DS; }
+    while (t <= d) { const k = t / d; xs.push(a.x + (b.x - a.x) * k); ys.push(a.y + (b.y - a.y) * k); if (is3D) zl.push(a.z + (b.z - a.z) * k); t += DS; }
     carry = d - (t - DS);
   }
-  const n = xs.length, tx = new Float32Array(n), ty = new Float32Array(n), kx = new Float32Array(n), ky = new Float32Array(n);
+  const n = xs.length;
+  const zs = is3D ? new Float32Array(zl) : null;
+  const tx = new Float32Array(n), ty = new Float32Array(n), tz = new Float32Array(n);
+  const kx = new Float32Array(n), ky = new Float32Array(n), kz = new Float32Array(n);
   for (let i = 0; i < n; i++) {
     const a = Math.max(0, i - 1), b = Math.min(n - 1, i + 1);
-    let dx = xs[b] - xs[a], dy = ys[b] - ys[a]; const m = Math.hypot(dx, dy) || 1;
-    tx[i] = dx / m; ty[i] = dy / m;
+    let dx = xs[b] - xs[a], dy = ys[b] - ys[a], dz = is3D ? zs[b] - zs[a] : 0;
+    const m = (is3D ? Math.hypot(dx, dy, dz) : Math.hypot(dx, dy)) || 1;
+    tx[i] = dx / m; ty[i] = dy / m; tz[i] = is3D ? dz / m : 0;
     const k = 6, i0 = Math.max(0, i - k), i1 = Math.min(n - 1, i + k);
-    if (i - i0 === k && i1 - i === k) { kx[i] = (xs[i1] - 2 * xs[i] + xs[i0]) / ((k * DS) ** 2); ky[i] = (ys[i1] - 2 * ys[i] + ys[i0]) / ((k * DS) ** 2); }
+    if (i - i0 === k && i1 - i === k) {
+      const dd = (k * DS) ** 2;
+      kx[i] = (xs[i1] - 2 * xs[i] + xs[i0]) / dd; ky[i] = (ys[i1] - 2 * ys[i] + ys[i0]) / dd;
+      if (is3D) kz[i] = (zs[i1] - 2 * zs[i] + zs[i0]) / dd;
+    }
   }
   // smooth curvature a little (hand-drawn wobble would otherwise read as G spikes)
-  const skx = new Float32Array(n), sky = new Float32Array(n);
-  for (let i = 0; i < n; i++) { let x = 0, y = 0, c2 = 0; for (let j = Math.max(0, i - 5); j <= Math.min(n - 1, i + 5); j++) { x += kx[j]; y += ky[j]; c2++; } skx[i] = x / c2; sky[i] = y / c2; }
+  const skx = new Float32Array(n), sky = new Float32Array(n), skz = new Float32Array(n);
+  for (let i = 0; i < n; i++) { let x = 0, y = 0, z = 0, c2 = 0; for (let j = Math.max(0, i - 5); j <= Math.min(n - 1, i + 5); j++) { x += kx[j]; y += ky[j]; z += kz[j]; c2++; } skx[i] = x / c2; sky[i] = y / c2; skz[i] = z / c2; }
   // which side of the rail the train sits on: chosen so it starts upright, then fixed (loops turn it upside down)
   const sigma = -tx[0] > 0 ? -1 : 1;
-  return { xs, ys, tx, ty, kx: skx, ky: sky, n, len: (n - 1) * DS, sigma };
+  // The rider's "up" axis. Flat tracks keep the original two-dimensional normal, exactly as
+  // written. A 3D layout transports that normal along the rail (rotation-minimising frame), which
+  // is well defined through a vertical drop and leaves a level turn unrolled -- the right base to
+  // bank on top of, later.
+  const ux = new Float32Array(n), uy = new Float32Array(n), uz = new Float32Array(n);
+  if (!is3D) {
+    for (let i = 0; i < n; i++) { ux[i] = sigma * ty[i]; uy[i] = -sigma * tx[i]; uz[i] = 0; }
+  } else {
+    // World up, projected off the tangent: the rider's head points as close to the sky as the rail
+    // allows, so a level turn stays unrolled. A perfectly vertical tangent makes that projection
+    // vanish, and there the previous frame is carried forward rather than snapping.
+    for (let i = 0; i < n; i++) {
+      const dp = -ty[i];
+      let wx = -dp * tx[i], wy = -1 - dp * ty[i], wz = -dp * tz[i];
+      let m = Math.hypot(wx, wy, wz);
+      if (m < 1e-6) {
+        const px = i ? ux[i - 1] : 1, py = i ? uy[i - 1] : 0, pz = i ? uz[i - 1] : 0;
+        const dq = px * tx[i] + py * ty[i] + pz * tz[i];
+        wx = px - dq * tx[i]; wy = py - dq * ty[i]; wz = pz - dq * tz[i];
+        m = Math.hypot(wx, wy, wz) || 1;
+      }
+      ux[i] = sigma * wx / m; uy[i] = sigma * wy / m; uz[i] = sigma * wz / m;
+    }
+    // Bank the turns so the sideways force is carried by the seat instead of the rider's ribs.
+    // phi = atan(v^2 * kh / g) is the angle that cancels it. The speed has to be the one the train
+    // will actually carry, so it comes from a coarse forward integration of the same drag model the
+    // ride uses: a free-fall estimate is wildly optimistic once the drag has taken its cut, and the
+    // turn ends up over-banked (thrown outward). Banking does not change length or slope, so this
+    // pass is not circular.
+    const vv = new Float32Array(n);
+    let v2 = V0 * V0;
+    for (let i = 0; i < n; i++) {
+      vv[i] = v2;
+      const at = G * ty[i] - (Math.min(DRAG * v2, dragCap) + ROLL);
+      v2 = Math.max(VMIN * VMIN, v2 + 2 * at * DS);
+    }
+    const raw = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      const lx = ty[i] * uz[i] - tz[i] * uy[i], ly = tz[i] * ux[i] - tx[i] * uz[i], lz = tx[i] * uy[i] - ty[i] * ux[i];
+      const kh = skx[i] * lx + sky[i] * ly + skz[i] * lz;
+      const a = Math.atan(vv[i] * kh / G);
+      raw[i] = Math.max(-BANK_MAX, Math.min(BANK_MAX, a));
+    }
+    for (let i = 0; i < n; i++) {
+      let a = 0, c2 = 0;
+      for (let j = Math.max(0, i - 5); j <= Math.min(n - 1, i + 5); j++) { a += raw[j]; c2++; }
+      a /= c2;
+      const cs = Math.cos(a), sn = Math.sin(a);
+      const lx = ty[i] * uz[i] - tz[i] * uy[i], ly = tz[i] * ux[i] - tx[i] * uz[i], lz = tx[i] * uy[i] - ty[i] * ux[i];
+      const ox = ux[i], oy = uy[i], oz = uz[i];
+      ux[i] = ox * cs + lx * sn; uy[i] = oy * cs + ly * sn; uz[i] = oz * cs + lz * sn;
+    }
+  }
+  return { xs, ys, zs, tx, ty, tz, kx: skx, ky: sky, kz: skz, ux, uy, uz, n, len: (n - 1) * DS, sigma, is3D };
 }
 
 function sample(track, s) {
   const t = track, f = Math.max(0, Math.min(t.n - 1.001, s / DS)), i = Math.floor(f), u = f - i, j = Math.min(t.n - 1, i + 1);
   const lerp = (A) => A[i] + (A[j] - A[i]) * u;
-  let tx = lerp(t.tx), ty = lerp(t.ty); const m = Math.hypot(tx, ty) || 1; tx /= m; ty /= m;
-  return { x: lerp(t.xs), y: lerp(t.ys), tx, ty, kx: lerp(t.kx), ky: lerp(t.ky) };
+  let tx = lerp(t.tx), ty = lerp(t.ty);
+  const tz = t.is3D ? lerp(t.tz) : 0;
+  const m = (t.is3D ? Math.hypot(tx, ty, tz) : Math.hypot(tx, ty)) || 1;
+  tx /= m; ty /= m;
+  // U is delivered already in the shape the rider's felt-G projection wants. Flat tracks hand back
+  // the raw sigma*(ty,-tx) pair, un-normalised, so the 2D force arithmetic is unchanged.
+  let ux = lerp(t.ux), uy = lerp(t.uy), uz = t.is3D ? lerp(t.uz) : 0;
+  if (t.is3D) { const um = Math.hypot(ux, uy, uz) || 1; ux /= um; uy /= um; uz /= um; }
+  return { x: lerp(t.xs), y: lerp(t.ys), z: t.is3D ? lerp(t.zs) : 0, tx, ty, tz: t.is3D ? tz / m : 0,
+           kx: lerp(t.kx), ky: lerp(t.ky), kz: t.is3D ? lerp(t.kz) : 0, ux, uy, uz };
 }
 
 function zAt(track, s) {
@@ -160,7 +241,7 @@ function newRide() {
            // electromagnetic launch; all zero when the ride simply rolls out of the station
            launchV: 0, launchLen: 0, launchA: 0, launchVb: 0, launching: false,
            // what the gauge and the score card read
-           vmax: 0, gAbsMax: 0, gx: 0, gxMax: 0, faulted: false };
+           vmax: 0, gAbsMax: 0, gx: 0, gxMax: 0, gy: 0, gyMax: 0, faulted: false };
 }
 
 // The electromagnetic launch. A constant-acceleration run this short would need about 1300 g at
@@ -251,11 +332,23 @@ function stepRide(track, r, dt) {
     if (r.v > r.vmax) r.vmax = r.v;
     if (r.s >= track.len - .01) { r.s = track.len; r.ended = true; }
     // felt vertical G in the rider's frame (the riders in 2D react to it)
-    const ax = at * p.tx + r.v * r.v * p.kx, ay = at * p.ty + r.v * r.v * p.ky;
-    const ux = track.sigma * p.ty, uy = -track.sigma * p.tx;
-    const gz = (ax * ux + (ay - G) * uy) / G;
+    const ax = at * p.tx + r.v * r.v * p.kx, ay = at * p.ty + r.v * r.v * p.ky, az = at * p.tz + r.v * r.v * p.kz;
+    const ux = p.ux, uy = p.uy, uz = p.uz;
+    // On a flat track p.tz, p.kz and p.uz are all exactly zero, so `+ az * uz` adds plain 0 and the
+    // line stays digit-for-digit the original two-dimensional arithmetic.
+    const gz = (ax * ux + (ay - G) * uy + az * uz) / G;
     r.g += (gz - r.g) * Math.min(1, h / .06);
     if (Math.abs(r.g) > r.gAbsMax) r.gAbsMax = Math.abs(r.g);
+    // Sideways G. Only a 3D layout can make any: on a flat track the lateral axis lies in the plane
+    // of the drawing and gravity has no component along it. L = T x U is the rider's left/right axis.
+    if (track.is3D) {
+      const lx = p.ty * uz - p.tz * uy, ly = p.tz * ux - p.tx * uz, lz = p.tx * uy - p.ty * ux;
+      const lm = Math.hypot(lx, ly, lz);
+      if (lm > 1e-9) {
+        r.gy = (ax * (lx / lm) + (ay - G) * (ly / lm) + az * (lz / lm)) / G;
+        if (Math.abs(r.gy) > r.gyMax) r.gyMax = Math.abs(r.gy);
+      }
+    }
     // Felt longitudinal G -- the shove into the seat back. Gravity's component along the track is
     // G*ty and the ride's tangential acceleration is at, so the specific force is at - G*ty.
     // The vertical-G gauge physically cannot see this on a level launch track: ty = 0 makes its
@@ -281,9 +374,9 @@ function simulate(ctrl, opts = {}) {
     stepRide(track, r, o.dt);
     if (o.record) log.push([r.s, r.v, r.g]);
   }
-  return { s: r.s, t: r.t, v: r.v, vmax: r.vmax, gAbsMax: r.gAbsMax, gxMax: r.gxMax,
+  return { s: r.s, t: r.t, v: r.v, vmax: r.vmax, gAbsMax: r.gAbsMax, gxMax: r.gxMax, gyMax: r.gyMax,
            ended: r.ended, faulted: r.faulted, launchA: r.launchA, launchV: r.launchV,
-           launchVb: r.launchVb, launchLen: r.launchLen,
+           launchVb: r.launchVb, launchLen: r.launchLen, is3D: track.is3D,
            log, result: r, track };
 }
 

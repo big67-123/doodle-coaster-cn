@@ -1,6 +1,8 @@
 // tracks.js -- 轨道定义槽 + 校验器。
 //
 // 【坐标系】points 用 [x, h]：x = 距起点的米数，h = 离地高度（向上为正，单位米，最低 0）。
+// 想要三维走线就写第三个元素 z：侧向偏移（米），正方向 = 起点航向的右手侧。
+// [x, h] 与 [x, h, z] 不能混用；不带 z 的轨道行为与旧版逐位一致。
 // 这样写轨道时不用关心画布高度；加载时会转成世界坐标 y = ground - h。
 // points 就是 Catmull-Rom 的控制点本身，不做额外平滑 —— 作者放哪，轨道就过哪。
 //
@@ -17,6 +19,7 @@ const LIMITS = {
   minLaunch: 100, maxLaunch: 10000,    // km/h
   maxGround: 5000,
   minHeight: 0,                        // 离地高度下限：0 = 正好贴地，负数会夹回 0
+  maxLateral: 10000,                   // 侧向偏移 z 的绝对值上限，米
 };
 
 const isNum = v => typeof v === 'number' && Number.isFinite(v);
@@ -52,43 +55,62 @@ function validate(def, opts = {}) {
   if (def.points.length > LIMITS.maxPoints) E('too-many-points', '控制点最多 ' + LIMITS.maxPoints + ' 个，现在有 ' + def.points.length + ' 个。');
 
   const pts = [];
-  let clamped = 0;
+  let clamped = 0, clampedZ = 0, hasZ = false, three = null;
   for (let i = 0; i < def.points.length; i++) {
     const p = def.points[i];
     if (!Array.isArray(p) || p.length < 2) { E('bad-point', '第 ' + (i + 1) + ' 个控制点不是 [x, h] 形式。'); continue; }
+    const isThree = p.length >= 3;
+    if (three === null) three = isThree;
+    else if (three !== isThree) { E('mixed-z', '不能把 [x, h] 和 [x, h, z] 混在一条轨道里：要么全是二维侧视图，要么全是三维走线。'); break; }
     const x = p[0], h = p[1];
     if (!isNum(x) || !isNum(h)) { E('bad-number', '第 ' + (i + 1) + ' 个控制点含有不是数字的内容。'); continue; }
     let hh = h;
     if (hh < LIMITS.minHeight) { hh = LIMITS.minHeight; clamped++; }
-    pts.push([x, hh]);
+    let zz = 0;
+    if (isThree) {
+      if (!isNum(p[2])) { E('bad-number', '第 ' + (i + 1) + ' 个控制点的 z 不是数字。'); continue; }
+      zz = p[2];
+      if (zz > LIMITS.maxLateral || zz < -LIMITS.maxLateral) { zz = Math.max(-LIMITS.maxLateral, Math.min(LIMITS.maxLateral, zz)); clampedZ++; }
+      hasZ = true;
+    }
+    pts.push(isThree ? [x, hh, zz] : [x, hh]);
   }
   if (clamped) W('clamped', '有 ' + clamped + ' 个点伸到地面以下，已贴回地面。');
+  if (clampedZ) W('clamped-z', '有 ' + clampedZ + ' 个侧向偏移超出 ±' + LIMITS.maxLateral + ' 米，已夹回。');
 
   // 去掉连续重复点
   const dedup = [];
   for (const p of pts) {
     const q = dedup[dedup.length - 1];
-    if (q && Math.abs(q[0] - p[0]) < 1e-6 && Math.abs(q[1] - p[1]) < 1e-6) continue;
+    if (q && Math.abs(q[0] - p[0]) < 1e-6 && Math.abs(q[1] - p[1]) < 1e-6 && Math.abs((q[2] || 0) - (p[2] || 0)) < 1e-6) continue;
     dedup.push(p);
   }
   if (dedup.length < LIMITS.minPoints) E('too-few-points', '去掉重复点后不足 ' + LIMITS.minPoints + ' 个控制点。');
   if (dedup.length !== pts.length && !clamped) W('dedup', '已忽略 ' + (pts.length - dedup.length) + ' 个连续重复点。');
 
   let len = 0;
-  for (let i = 1; i < dedup.length; i++) len += Math.hypot(dedup[i][0] - dedup[i - 1][0], dedup[i][1] - dedup[i - 1][1]);
+  for (let i = 1; i < dedup.length; i++) {
+    const a = dedup[i - 1], b = dedup[i];
+    // 三维走线按真实三维弧长算；二维分支走的是与旧版完全相同的表达式。
+    len += hasZ ? Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]) : Math.hypot(b[0] - a[0], b[1] - a[1]);
+  }
   if (len < LIMITS.minLength) E('too-short', '轨道总长只有 ' + len.toFixed(1) + ' 米，至少需要 ' + LIMITS.minLength + ' 米。');
   if (len > LIMITS.maxLength) E('too-long', '轨道总长 ' + len.toFixed(0) + ' 米，超过上限 ' + LIMITS.maxLength + ' 米。');
 
   if (errors.length) return { ok: false, errors, warnings, norm: null };
 
-  // 转成世界坐标：屏幕上 y 向下，所以 y = ground - h
-  const ctrl = dedup.map(p => ({ x: p[0], y: ground - p[1] }));
+  // 转成世界坐标：屏幕上 y 向下，所以 y = ground - h。二维走线的 ctrl 保持旧对象形状（不带 z）。
+  const ctrl = hasZ ? dedup.map(p => ({ x: p[0], y: ground - p[1], z: p[2] })) : dedup.map(p => ({ x: p[0], y: ground - p[1] }));
   const hs = dedup.map(p => p[1]);
+  const zs = hasZ ? dedup.map(p => p[2]) : null;
   const norm = {
     id, name, ground, launch,
     note: typeof def.note === 'string' ? def.note : '',
     points: dedup, ctrl,
-    stats: { length: +len.toFixed(2), peak: +Math.max(...hs).toFixed(2), low: +Math.min(...hs).toFixed(2), points: dedup.length },
+    stats: {
+      length: +len.toFixed(2), peak: +Math.max(...hs).toFixed(2), low: +Math.min(...hs).toFixed(2), points: dedup.length,
+      is3D: hasZ, lateral: zs ? +(Math.max(...zs) - Math.min(...zs)).toFixed(2) : 0,
+    },
   };
   if (launch > 0 && len < 60) W('short-launch', '轨道偏短，弹射段会被压得很短，弹射效果不明显。');
   return { ok: true, errors, warnings, norm };
