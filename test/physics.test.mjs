@@ -115,11 +115,11 @@ test('所有场景都终止、无 NaN、s 单调不减、G 值有限', () => {
   }
 });
 
-test('弹射段长度夹在 25–300 m，且不超过轨道本身', () => {
+test('弹射段长度夹在 20–60 m，且不超过轨道本身', () => {
   P.setArcade(true);
   for (const kmh of [100, 10000]) {
     const long = P.simulate(built.long, { dt: 1 / 60, launchKmh: kmh });
-    assert.ok(long.result.launchLen >= 25 && long.result.launchLen <= 300, '长轨 ' + long.result.launchLen);
+    assert.ok(long.result.launchLen >= 20 && long.result.launchLen <= 60, '长轨 ' + long.result.launchLen);
     const gentle = P.simulate(built.gentle, { dt: 1 / 60, launchKmh: kmh });
     assert.ok(gentle.result.launchLen <= gentle.track.len + 1e-9, '短轨弹射段不得超过轨道长度');
   }
