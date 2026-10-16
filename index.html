@@ -314,7 +314,7 @@ const T = {
     brand: '涂鸦过山车', h1: '一笔画<br>画出你的过山车', sub: '你画的任意一条线，都会变成真的轨道。',
     tooShort: '太短了，画长一点吧！', start: '▶ 出发', readyMsg: '轨道已就绪，点出发开始乘坐',
     kick: '涂鸦过山车', done: '欢迎回到站台！',
-    share: '分享到 X（朋友也能坐）', again: '再坐一次', fresh: '重新画', save: '保存图片',
+    share: '分享到 X（朋友也能坐）', again: '换弹射再坐', fresh: '重新画', save: '保存图片',
     ride: '🎢 乘坐这条轨道', no3d: '你的浏览器不支持 3D，将以侧视图行驶。', mapOn: '显示地图', mapOff: '隐藏地图', rails: '轨道', posts: '支柱', map: '地图', shown: '开', hidden: '关',
     sKick: '有人画了这条轨道', sName: '要坐一次吗？', sDraw: '我自己画',
     tweet: '我一笔画出了一座过山车 🎢\n来坐坐看：', tag: '涂鸦过山车',
@@ -324,7 +324,7 @@ const T = {
     launchLabel: '弹射速度', launch: '⚡ 电磁弹射', gravityStart: '重力起步',
     noLaunch: '不弹射（重力起步）', launchToast: '⚡ 电磁弹射 · {v}',
     // 成绩
-    stats: '本次成绩', maxSpeed: '最高速度', maxG: '最大 G', duration: '用时', entrySpeed: '入站速度', launchA: '弹射加速度',
+    stats: '本次成绩', maxSpeed: '最高速度', maxG: '最大 G', duration: '用时', entrySpeed: '入站速度', launchA: '弹射峰值', launchPush: '弹射峰值推背',
     // 轨道工坊
     workshop: '轨道工坊', tabList: '我的轨道', tabJson: '粘贴 JSON', tabEdit: '编辑器',
     rideIt: '试跑', editIt: '编辑', delIt: '删除', close: '关闭', back: '返回',
@@ -345,7 +345,7 @@ const T = {
     brand: 'Doodle Coaster', h1: 'Draw a roller coaster<br>in one stroke', sub: 'Any line you draw becomes a ride.',
     tooShort: 'Too short — draw a longer line!', start: '▶ Start', readyMsg: 'Track ready! Tap Start to ride.',
     kick: 'Doodle Coaster', done: 'Welcome back to the station!',
-    share: 'Share on X — friends can ride it', again: 'Ride again', fresh: 'Redraw', save: 'Save image',
+    share: 'Share on X — friends can ride it', again: 'Ride again (launch)', fresh: 'Redraw', save: 'Save image',
     ride: '🎢 Ride this coaster', no3d: 'Your browser can’t show 3D, so you’ll ride it from the side.', mapOn: 'Map on', mapOff: 'Map off', rails: 'Track', posts: 'Pillars', map: 'Map', shown: 'on', hidden: 'off',
     sKick: 'Someone drew this coaster', sName: 'Take a ride?', sDraw: 'Draw my own',
     tweet: 'I drew a roller coaster in one stroke 🎢\nRide it:', tag: 'DoodleCoaster'
@@ -357,7 +357,7 @@ Object.assign(T.en, {
   speedLabel: 'Speed', gLabel: 'G force', gAirtime: 'airtime', gHeavy: 'heavy', slowmoOff: 'Normal',
   launchLabel: 'Launch speed', launch: '⚡ Electromagnetic launch', gravityStart: 'Gravity',
   noLaunch: 'No launch (roll out by gravity)', launchToast: '⚡ Launch · {v}',
-  maxSpeed: 'Top speed', maxG: 'Peak G', duration: 'Time', entrySpeed: 'Station entry', launchA: 'Launch accel',
+  maxSpeed: 'Top speed', maxG: 'Peak G', duration: 'Time', entrySpeed: 'Station entry', launchA: 'Launch peak', launchPush: 'Peak shove',
   workshop: 'Track workshop', tabList: 'Tracks', tabJson: 'Paste JSON', tabEdit: 'Editor',
   rideIt: 'Ride', editIt: 'Edit', delIt: 'Delete', close: 'Close',
   importFile: 'Import file', exportTrack: 'Export track', copyLink: 'Copy share link', check: 'Validate',
@@ -521,7 +521,10 @@ function fitView() {
     minX = Math.min(minX, e.xs[j] + 2); maxX = Math.max(maxX, e.xs[j] - 2); minY = Math.min(minY, e.ys[j]);
   }
   minY -= 5; minX -= 4; maxX += 6;
-  const top = 76, bottom = H - GROUND_PX;
+  // 待出发界面的底部被出发栏盖住，所以取景必须避开它 —— 否则矮而宽的轨道（比如设计出来的
+  // 那些）会被整个压在栏下面看不见。出发栏隐藏时 rect.top 是 0，此时退回原来的底边。
+  const barTop = ($('#startBar').getBoundingClientRect().top) | 0;
+  const top = 76, bottom = (barTop > 0 && barTop < H) ? barTop - 10 : H - GROUND_PX;
   // 下限放到 0.1：世界尺度变大后手机上一屏就有 200 米，长轨道不该再被"最小 2 px/m"顶出屏幕。
   const s = Math.max(.1, Math.min(16, Math.min((W - 24) / (maxX - minX), (bottom - top) / (groundY - minY))));
   view = { s, ox: W / 2 - s * (minX + maxX) / 2, oy: bottom - s * groundY };
@@ -567,7 +570,11 @@ function showResult() {
   $('#rName').textContent = L.done;
   const r = ride, K = v => Math.round(v * 3.6).toLocaleString('zh-CN');
   const rows = [];
-  if (r && r.launchA > 0) { const a = r.launchA / G; rows.push([L.launchA, a >= 100 ? a.toFixed(0) : a.toFixed(1), 'G']); }
+  if (r && r.launchA > 0) {
+    const a = r.launchA / G;
+    rows.push([L.launchA, a >= 100 ? a.toFixed(0) : a.toFixed(1), 'G']);
+    rows.push([L.launchPush, fmtG(r.gxMax), 'G']);      // 纵向推背：垂直 G 仪表在平轨上物理看不到它
+  }
   if (r) rows.push(
     [L.maxSpeed, K(r.vmax), 'km/h'],
     [L.maxG, fmtG(r.gAbsMax), 'G'],
@@ -585,7 +592,15 @@ function showResult() {
   const h = shareHash();
   if (!location.hash.includes(h)) history.replaceState(null, '', location.pathname + location.search + '#' + h);
 }
-$('#rAgain').addEventListener('click', startRide);
+// 「再坐一次」不再直接按上次设定开跑：回到待出发界面，那里才有完整的选择
+// （弹射滑杆 100–10000、四个档位、重力起步勾选框）。不重建轨道、不动 currentDef，
+// 所以设计轨道的 #j= 分享链接不受影响（useCtrl 会清掉 currentDef，故不采用）。
+$('#rAgain').addEventListener('click', () => {
+  $('#result').hidden = true;
+  setView3d(false);
+  enterReady();                                  // 先切回待出发：出发栏可见之后才能量到它的位置
+  if (fitted) { fitView(); buildBackdrop(); }    // fitView 要避开出发栏，否则矮轨道会被压在栏下
+});
 $('#bGo').addEventListener('click', () => { if (mode === 'ready') { audioInit(); startRide(); } });
 $('#bRedo').addEventListener('click', () => { if (mode === 'ready') resetDraw(); });
 addEventListener('keydown', e => { if (mode === 'ready' && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); audioInit(); startRide(); } });
@@ -1253,7 +1268,10 @@ function render3D() {
   if (glc.width !== w || glc.height !== h) { glc.width = w; glc.height = h; }
   gl.viewport(0, 0, w, h);
   const s = ride ? ride.s : 0, c = camAt(s), ahead = camAt(Math.min(track.len, s + 2));
-  const v = ride ? ride.v : 0, shake = v > 14 ? Math.min(.035, (v - 14) * .0016) : 0, tt = performance.now() / 1000;
+  const v = ride ? ride.v : 0, tt = performance.now() / 1000;
+  // 速度抖动 + 弹射推背抖动。弹射的力是纵向的，垂直 G 仪表在平轨上看不到它，镜头是主要出口。
+  const launchShake = ride && ride.launching ? Math.min(.05, Math.max(0, ride.gx) * .018) : 0;
+  const shake = (v > 14 ? Math.min(.035, (v - 14) * .0016) : 0) + launchShake;
   const q = ride && mode === 'ride' ? Math.max(0, Math.min(1, (ride.held - .2) / 1.7)) : 1, k = 1 - q * q * (3 - 2 * q);
   const eye = V3.add(V3.add(V3.add(c.P, V3.mul(c.U, 1.55 + 1.1 * k + Math.sin(tt * 37) * shake)), V3.mul(c.T, -.35 - 3 * k)), V3.mul(c.B, .8 * k + Math.sin(tt * 29) * shake));
   let dir = V3.norm(V3.add(V3.mul(c.T, .78), V3.mul(V3.norm(V3.sub(V3.add(ahead.P, V3.mul(ahead.U, 1.4)), eye)), .22)));
@@ -1473,8 +1491,10 @@ function launchSound(v) {
   f.type = 'lowpass';
   f.frequency.setValueAtTime(500, t0);
   f.frequency.exponentialRampToValueAtTime(5200, t0 + dur);
+  // 攻击必须几乎瞬间到位：0.4–1.8 秒的缓升听起来是"被推着走"，不是"被踹一脚"。
   g.gain.setValueAtTime(.0001, t0);
-  g.gain.exponentialRampToValueAtTime(.2, t0 + dur * .85);
+  g.gain.exponentialRampToValueAtTime(.2, t0 + .05);
+  g.gain.setValueAtTime(.2, t0 + dur * .7);
   g.gain.exponentialRampToValueAtTime(.0001, t0 + dur + .25);
   o.connect(f); f.connect(g); g.connect(AC.destination); o.start(t0); o.stop(t0 + dur + .3);
   const len = Math.floor(AC.sampleRate * dur), buf = AC.createBuffer(1, len, AC.sampleRate), d = buf.getChannelData(0);
@@ -1894,7 +1914,7 @@ if (QP.get('test') === '1') window.__olc = {
   get editPts() { return editPts.map(p => ({ x: p.x, y: p.y })); },
   get bodyClass() { return document.body.className; },
   dry: opts => simulate(ctrl, Object.assign({ dt: .05 }, opts || {})),
-  stats: () => ride ? { v: ride.v, vmax: ride.vmax, gAbsMax: ride.gAbsMax, t: ride.t, launchA: ride.launchA, launchV: ride.launchV, ended: ride.ended, faulted: ride.faulted } : null,
+  stats: () => ride ? { v: ride.v, vmax: ride.vmax, gAbsMax: ride.gAbsMax, gx: ride.gx, gxMax: ride.gxMax, launchVb: ride.launchVb, t: ride.t, launchA: ride.launchA, launchV: ride.launchV, ended: ride.ended, faulted: ride.faulted } : null,
   setArcade: on => setArcade(on !== false),
   setLaunch: kmh => { launchKmh = Math.max(LAUNCH_MIN, Math.min(LAUNCH_MAX, kmh)); noLaunch = false; syncLaunchUI(); },
   setNoLaunch: on => { noLaunch = !!on; syncLaunchUI(); },

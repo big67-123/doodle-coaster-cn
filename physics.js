@@ -12,6 +12,19 @@ const G = 9.81, VMIN = 10, V0 = 1.5, DRAG = .0008, ROLL = .15, DS = .25;
 const SUB = 1 / 240;                                  // fixed integration step
 const SMOOTH_TURN = 2, SMOOTH_PULL = 6;               // metres
 
+/* ---------- launch character ---------- */
+// The launch used to be a flat constant-acceleration run over clamp(track*0.25, 25, 300) m: a
+// rectangular pulse, which reads as "being pushed steadily" rather than as a launch. Real machines
+// do not do that -- thrust is highest while the train is still slow, then falls away once the drive
+// runs out of voltage headroom (back-EMF) and becomes power-limited:
+//     a(v) = a0               for v <= vBase     (constant force)
+//     a(v) = a0 * vBase / v   for v >  vBase     (constant power)
+// with vBase = BURST_R * V. BURST_R = 1 degenerates exactly to the old constant-acceleration launch.
+// Naming, to stay honest: this is the hydraulic / LIM personality ("a sudden, abrupt kick"), not the
+// LSM one -- the industry describes LSM as the smooth, computer-metered push.
+const LAUNCH_FRAC = .15, LAUNCH_MIN = 20, LAUNCH_MAX = 60;
+const BURST_R = .45;
+
 // ---------- tuning ----------
 // The defaults reproduce the original physics bit-for-bit. Arcade mode turns the two caps on;
 // those two caps are what turn a 10 000 km/h launch into a ride instead of a physics joke.
@@ -145,9 +158,9 @@ function newRide() {
   return { s: 0, v: V0, t: 0, acc: 0, g: 1, lift: false, ended: false, clickT: 0, riders: null,
            hold: 0, held: 0,
            // electromagnetic launch; all zero when the ride simply rolls out of the station
-           launchV: 0, launchLen: 0, launchA: 0, launching: false,
+           launchV: 0, launchLen: 0, launchA: 0, launchVb: 0, launching: false,
            // what the gauge and the score card read
-           vmax: 0, gAbsMax: 0, faulted: false };
+           vmax: 0, gAbsMax: 0, gx: 0, gxMax: 0, faulted: false };
 }
 
 // The electromagnetic launch. A constant-acceleration run this short would need about 1300 g at
@@ -157,11 +170,30 @@ function newRide() {
 function applyLaunch(r, track, kmh) {
   const v = Math.max(0, Math.min(10000, Number(kmh) || 0)) / 3.6;
   if (!(v > V0)) return 0;
-  r.launchLen = Math.min(Math.max(25, Math.min(300, track.len * 0.25)), track.len);
+  r.launchLen = Math.min(Math.max(LAUNCH_MIN, Math.min(LAUNCH_MAX, track.len * LAUNCH_FRAC)), track.len);
   r.launchV = v;
-  r.launchA = (v * v - V0 * V0) / (2 * r.launchLen);
+  // Base speed: clamped above V0 so the constant-force phase is never empty (vBase is a divisor).
+  r.launchVb = Math.max(V0 * 1.0001, Math.min(v, BURST_R * v));
+  // Peak acceleration, solved from "covers exactly launchLen and arrives exactly at launchV" by
+  // integrating the two-regime profile:
+  //   launchLen = (vBase^2 - V0^2)/(2*a0) + (V^3 - vBase^3)/(3*a0*vBase)
+  // With BURST_R = 1 the second term vanishes and this is (V^2 - V0^2)/(2*launchLen) -- the old
+  // constant-acceleration launch. test/launch.test.mjs asserts that identity.
+  const vb = r.launchVb;
+  r.launchA = ((vb * vb - V0 * V0) / 2 + (v * v * v - vb * vb * vb) / (3 * vb)) / r.launchLen;
   r.launching = true;
   return r.launchA;
+}
+
+// Speed as a closed-form function of position inside the launch. Because the profile does not come
+// from integrating acceleration, it is step-size independent by construction -- and exact at any
+// speed, including 10 000 km/h, where an explicit integrator would need absurd steps.
+function launchSpeed(r, s) {
+  if (s <= 0) return V0;
+  const vb = r.launchVb, a0 = r.launchA;
+  const s1 = (vb * vb - V0 * V0) / (2 * a0);          // where the constant-force phase ends
+  if (s <= s1) return Math.sqrt(V0 * V0 + 2 * a0 * s);
+  return Math.cbrt(vb * vb * vb + 3 * a0 * vb * (s - s1));
 }
 
 function stepRide(track, r, dt) {
@@ -183,13 +215,19 @@ function stepRide(track, r, dt) {
     const p = sample(track, r.s);
     let at, exactDs = -1;
     if (r.launching && r.s < r.launchLen) {
-      // Under constant acceleration v is linear in t, so the trapezoid (v0+v1)/2*h is the exact
-      // displacement. That makes the launch phase independent of the step size -- otherwise the
-      // plain s += v*h biased the launch duration by a few tenths of a percent.
-      const v0 = r.v, v1 = Math.min(r.launchV, v0 + r.launchA * h);
-      exactDs = (v0 + v1) * .5 * h;
+      // Speed is a closed-form function of position, so the profile itself is step-size
+      // independent. Two trapezoid passes make the displacement second-order accurate; at is the
+      // true instantaneous tangential acceleration -- the burst as it is actually felt.
+      const v0 = r.v;
+      let ds = v0 * h;
+      for (let it = 0; it < 2; it++) {
+        const vg = Math.min(r.launchV, launchSpeed(r, r.s + ds));
+        ds = (v0 + vg) * .5 * h;
+      }
+      const v1 = Math.min(r.launchV, launchSpeed(r, r.s + ds));
+      exactDs = ds;
       r.v = v1;
-      at = v1 < r.launchV ? r.launchA : 0;
+      at = Math.max(0, (v1 - v0) / h);
     } else {
       r.launching = false;
       at = G * p.ty - dragAcc(r.v) - ROLL;
@@ -218,6 +256,14 @@ function stepRide(track, r, dt) {
     const gz = (ax * ux + (ay - G) * uy) / G;
     r.g += (gz - r.g) * Math.min(1, h / .06);
     if (Math.abs(r.g) > r.gAbsMax) r.gAbsMax = Math.abs(r.g);
+    // Felt longitudinal G -- the shove into the seat back. Gravity's component along the track is
+    // G*ty and the ride's tangential acceleration is at, so the specific force is at - G*ty.
+    // The vertical-G gauge physically cannot see this on a level launch track: ty = 0 makes its
+    // projection onto the rider's "up" axis exactly zero. That is why the launch carries its own
+    // readout and its own camera feedback. Deliberately not low-passed -- the burst must not be
+    // smoothed away.
+    r.gx = at / G - p.ty;
+    if (r.gx > r.gxMax) r.gxMax = r.gx;
   }
   if (!Number.isFinite(r.s) || !Number.isFinite(r.v)) { r.faulted = true; r.v = V0; r.ended = true; }
 }
@@ -235,15 +281,17 @@ function simulate(ctrl, opts = {}) {
     stepRide(track, r, o.dt);
     if (o.record) log.push([r.s, r.v, r.g]);
   }
-  return { s: r.s, t: r.t, v: r.v, vmax: r.vmax, gAbsMax: r.gAbsMax,
+  return { s: r.s, t: r.t, v: r.v, vmax: r.vmax, gAbsMax: r.gAbsMax, gxMax: r.gxMax,
            ended: r.ended, faulted: r.faulted, launchA: r.launchA, launchV: r.launchV,
+           launchVb: r.launchVb, launchLen: r.launchLen,
            log, result: r, track };
 }
 
 const api = {
   PX_PER_M: 10, G, VMIN, V0, DRAG, ROLL, DS, UNIT: 100, SUB, SMOOTH_TURN, SMOOTH_PULL,
   DRAG_CAP_ARCADE, BRAKE_A_ARCADE,
-  dragAcc, setArcade, onRelease, applyLaunch,
+  dragAcc, setArcade, onRelease, applyLaunch, launchSpeed,
+  LAUNCH_FRAC, LAUNCH_MIN, LAUNCH_MAX, BURST_R,
   setTuning: (o) => {
     if (o.dragCap !== undefined) dragCap = o.dragCap;
     if (o.brakeA !== undefined) brakeA = o.brakeA;
